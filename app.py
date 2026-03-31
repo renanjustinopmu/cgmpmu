@@ -4146,6 +4146,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
 });
 
+document.addEventListener("change", function(e){
+    if(e.target.classList.contains("os_select")){
+        const selected = e.target.selectedOptions[0]
+        const item = selected ? selected.dataset.item : ""
+
+        const container = e.target.closest(".registro")
+        container.querySelector(".item_paint").value = item
+    }
+})
+
 document.addEventListener("DOMContentLoaded", function () {
 
     document.querySelectorAll(".os_select").forEach(select => {
@@ -4802,8 +4812,32 @@ function adicionar() {
     const base = document.querySelector(".registro");
     const clone = base.cloneNode(true);
 
-    clone.querySelector("input[name='hora_id[]']").value = "";
-    clone.querySelectorAll("input[type='date'], input[name='duracao[]']").forEach(i => i.value = "");
+    // limpa inputs (exceto select de OS)
+    clone.querySelectorAll("input").forEach(i => {
+        if (i.type !== "date") i.value = "";
+    });
+
+    // mantém a data padrão
+    clone.querySelector("input[type='date']").value =
+        new Date().toISOString().split('T')[0];
+
+    // pega a OS selecionada do primeiro registro
+    const osBase = base.querySelector(".os_select").value;
+
+    const selectClone = clone.querySelector(".os_select");
+    selectClone.value = osBase;
+
+    // atualiza item_paint do clone
+    const selected = selectClone.selectedOptions[0];
+    const item = selected ? selected.dataset.item : "";
+    clone.querySelector(".item_paint").value = item;
+
+    // limpa outros selects (atividade etc)
+    clone.querySelectorAll("select").forEach(s => {
+        if (!s.classList.contains("os_select")) {
+            s.selectedIndex = 0;
+        }
+    });
 
     document.getElementById("registros").appendChild(clone);
 }
