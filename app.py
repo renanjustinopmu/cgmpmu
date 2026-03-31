@@ -4032,16 +4032,17 @@ def lancar():
         </div>
 
         <div>Observação:
-            <textarea name="observacao"></textarea>
+            <textarea name="obs_individual[]" rows="3"
+                style="
+                    width:100%;
+                    border:1px solid #ccc;
+                    border-radius:6px;
+                    padding:6px;
+                "></textarea>
         </div>
     </div>
 
     <button type="button" onclick="adicionar()">➕ Adicionar registro</button>
-
-    <div style="margin-top:10px;">
-        <label>Observação geral:</label>
-        <textarea name="observacoes" rows="4" style="width:100%;"></textarea>
-    </div>
 
     <div style="margin-top:10px;">
     <label>Co-participantes</label><br>
