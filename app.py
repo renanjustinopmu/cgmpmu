@@ -3688,6 +3688,7 @@ def lancar():
         duracoes = request.form.getlist('duracao[]')
         atividades = request.form.getlist('atividade[]')
         obs_individual = request.form.getlist('obs_individual[]')
+        observacoes = request.form.get("observacoes")
         
         coparticipantes = request.form.getlist("coparticipantes[]")
     
@@ -3709,6 +3710,7 @@ def lancar():
             duracao = duracoes[i]
             atividade = atividades[i]
             obs_linha = obs_individual[i]
+            
             if not duracao:
                 continue
             try:
@@ -3851,23 +3853,6 @@ def lancar():
 
 <form method="post">
 
-    <div>O.S:
-        <select name="os" id="os_select" required>
-            <option value=""></option>
-            {% for o in oss %}
-                <option value="{{ o.codigo }}"
-                        data-item="{{ o.item_paint }}"
-                        {% if os_pre == o.codigo %}selected{% endif %}>
-                    {{ o.codigo }}{% if o.resumo %} - {{ o.resumo }}{% endif %}
-                </option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <div>Item PAINT:
-        <input type="text" id="item_paint" name="item" readonly>
-    </div>
-
     <!-- REQUISIÇÕES -->
     <div id="box_requisicoes" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
         <h4>Requisições Delegadas</h4>
@@ -3907,14 +3892,6 @@ def lancar():
         </div>
     </div>
 
-    <div>Atividade:
-        <select name="atividade" required>
-            <option>1. Planejamento</option>
-            <option>2. Execução</option>
-            <option>3. Relatório</option>
-        </select>
-    </div>
-
     <h4>Registros de Horas</h4>
 
     <div id="registros">
@@ -3922,12 +3899,12 @@ def lancar():
     <div class="registro" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
 
         <div>O.S:
-            <select name="os[]"
-                    class="os_select"
-                    required>
+            <select name="os[]" class="os_select" required>
                 <option value=""></option>
                 {% for o in oss %}
-                    <option value="{{ o.codigo }}" data-item="{{ o.item_paint }}">
+                    <option value="{{ o.codigo }}"
+                            data-item="{{ o.item_paint }}"
+                            {% if os_pre == o.codigo %}selected{% endif %}>
                         {{ o.codigo }} - {{ o.resumo }}
                     </option>
                 {% endfor %}
@@ -4168,14 +4145,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
 });
 
-document.addEventListener("change", function(e){
-    if(e.target.classList.contains("os_select")){
-        const selected = e.target.selectedOptions[0]
-        const item = selected ? selected.dataset.item : ""
+document.addEventListener("DOMContentLoaded", function () {
 
-        const container = e.target.closest(".registro")
-        container.querySelector(".item_paint").value = item
-    }
+    document.querySelectorAll(".os_select").forEach(select => {
+        const selected = select.selectedOptions[0]
+        if(selected){
+            const item = selected.dataset.item || ""
+            select.closest(".registro")
+                  .querySelector(".item_paint").value = item
+        }
+    })
+
 })
 </script>
 
