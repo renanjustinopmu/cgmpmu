@@ -4062,36 +4062,40 @@ def lancar():
 </form>
 
 <script>
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("change", function(e){
 
-    const osSelect = document.getElementById("os_select");
-    const itemInput = document.getElementById("item_paint");
+    if(e.target.classList.contains("os_select")){
 
-    const boxReq = document.getElementById("box_requisicoes");
-    const boxAtendimento = document.getElementById("box_atendimento");
-    const boxConsultoria = document.getElementById("box_consultoria");
+        const select = e.target
+        const selected = select.selectedOptions[0]
+        const codigoOS = select.value
 
-    osSelect.addEventListener("change", function () {
+        const container = select.closest(".registro")
 
-        const selected = this.selectedOptions[0];
-        const codigoOS = this.value;
+        // ITEM PAINT
+        const itemInput = container.querySelector(".item_paint")
+        itemInput.value = selected ? selected.dataset.item : ""
 
-        itemInput.value = selected ? selected.dataset.item : "";
+        // BOXES GERAIS
+        const boxReq = document.getElementById("box_requisicoes")
+        const boxAtendimento = document.getElementById("box_atendimento")
+        const boxConsultoria = document.getElementById("box_consultoria")
 
-        // requisições
-        if (codigoOS === "1.4/2026" ||
-            codigoOS === "1.1/2026" ||
-            codigoOS === "1.6/2026") {
-            boxReq.style.display = "block";
+        // REQUISIÇÕES
+        if (["1.4/2026","1.1/2026","1.6/2026"].includes(codigoOS)) {
+            boxReq.style.display = "block"
         } else {
-            boxReq.style.display = "none";
+            boxReq.style.display = "none"
         }
 
-        // OS específicas
-        boxAtendimento.style.display = (codigoOS === "1.15/2026") ? "block" : "none";
+        // ESPECIAIS
+        boxAtendimento.style.display = (codigoOS === "1.15/2026") ? "block" : "none"
+
         boxConsultoria.style.display =
-            (codigoOS === "1.14/2026" || codigoOS === "1.16/2026") ? "block" : "none";
-    });
+            (codigoOS === "1.14/2026" || codigoOS === "1.16/2026") ? "block" : "none"
+    }
+
+});
 
     // busca rápida
     document.getElementById("busca_req").addEventListener("keyup", function () {
@@ -4812,32 +4816,28 @@ function adicionar() {
     const base = document.querySelector(".registro");
     const clone = base.cloneNode(true);
 
-    // limpa inputs (exceto select de OS)
+    // 🔹 pega valores da O.S original
+    const osValue = base.querySelector(".os_select").value;
+    const itemValue = base.querySelector(".item_paint").value;
+
+    // limpa inputs (menos item)
     clone.querySelectorAll("input").forEach(i => {
-        if (i.type !== "date") i.value = "";
+        if (i.name !== "item[]") i.value = "";
     });
 
-    // mantém a data padrão
+    // data nova
     clone.querySelector("input[type='date']").value =
         new Date().toISOString().split('T')[0];
 
-    // pega a OS selecionada do primeiro registro
-    const osBase = base.querySelector(".os_select").value;
+    // 🔹 mantém a mesma O.S
+    const select = clone.querySelector(".os_select");
+    select.value = osValue;
 
-    const selectClone = clone.querySelector(".os_select");
-    selectClone.value = osBase;
+    // 🔹 mantém item paint
+    clone.querySelector(".item_paint").value = itemValue;
 
-    // atualiza item_paint do clone
-    const selected = selectClone.selectedOptions[0];
-    const item = selected ? selected.dataset.item : "";
-    clone.querySelector(".item_paint").value = item;
-
-    // limpa outros selects (atividade etc)
-    clone.querySelectorAll("select").forEach(s => {
-        if (!s.classList.contains("os_select")) {
-            s.selectedIndex = 0;
-        }
-    });
+    // 🔹 dispara change pra atualizar regras (requisição, etc)
+    select.dispatchEvent(new Event("change"));
 
     document.getElementById("registros").appendChild(clone);
 }
