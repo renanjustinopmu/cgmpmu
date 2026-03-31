@@ -3682,10 +3682,13 @@ def lancar():
     # -------------------------
     if request.method == 'POST':
     
-        item = request.form.get('item')
-        os_codigo = request.form.get('os')
+        os_list = request.form.getlist('os[]')
+        itens = request.form.getlist('item[]')
+        datas = request.form.getlist('data[]')
+        duracoes = request.form.getlist('duracao[]')
         atividades = request.form.getlist('atividade[]')
         obs_individual = request.form.getlist('obs_individual[]')
+        
         coparticipantes = request.form.getlist("coparticipantes[]")
     
         requisicoes_ids = request.form.getlist("requisicoes[]")
@@ -3700,6 +3703,8 @@ def lancar():
         # lista de colaboradores que receberão o lançamento
         destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
         for i in range(len(datas)):
+            os_codigo = os_list[i]
+            item = itens[i]
             data = datas[i]
             duracao = duracoes[i]
             atividade = atividades[i]
@@ -3913,31 +3918,51 @@ def lancar():
     <h4>Registros de Horas</h4>
 
     <div id="registros">
-        <div class="registro" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
-    
-            <div>Data:
-                <input type="date" name="data[]" value="{{ data_padrao }}" required>
-            </div>
-    
-            <div>Duração:
-                <input type="text" name="duracao[]" placeholder="HH:MM" required>
-            </div>
-    
-            <div>Atividade:
-                <select name="atividade[]">
-                    <option>1. Planejamento</option>
-                    <option>2. Execução</option>
-                    <option>3. Relatório</option>
-                </select>
-            </div>
-    
-            <div>Observação:
-                <input type="text" name="obs_individual[]">
-            </div>
-    
-            <button type="button" onclick="remover(this)">❌ Remover</button>
+
+    <div class="registro" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
+
+        <div>O.S:
+            <select name="os[]"
+                    class="os_select"
+                    required>
+                <option value=""></option>
+                {% for o in oss %}
+                    <option value="{{ o.codigo }}" data-item="{{ o.item_paint }}">
+                        {{ o.codigo }} - {{ o.resumo }}
+                    </option>
+                {% endfor %}
+            </select>
         </div>
+
+        <div>Item PAINT:
+            <input type="text" name="item[]" class="item_paint" readonly>
+        </div>
+
+        <div>Data:
+            <input type="date" name="data[]" value="{{ data_padrao }}" required>
+        </div>
+
+        <div>Duração:
+            <input type="text" name="duracao[]" placeholder="HH:MM" required>
+        </div>
+
+        <div>Atividade:
+            <select name="atividade[]">
+                <option>1. Planejamento</option>
+                <option>2. Execução</option>
+                <option>3. Relatório</option>
+            </select>
+        </div>
+
+        <div>Observação:
+            <input type="text" name="obs_individual[]">
+        </div>
+
+        <button type="button" onclick="remover(this)">❌ Remover</button>
+
     </div>
+
+</div>
 
     <!-- ATENDIMENTO OS 1.15 -->
     <div id="box_atendimento" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
@@ -4104,8 +4129,13 @@ document.addEventListener("DOMContentLoaded", function () {
 function adicionar() {
     const base = document.querySelector(".registro");
     const clone = base.cloneNode(true);
+
     clone.querySelectorAll("input").forEach(i => i.value = "");
-    clone.querySelector("input[type='date']").value = new Date().toISOString().split('T')[0];
+    clone.querySelector("input[type='date']").value =
+        new Date().toISOString().split('T')[0];
+
+    clone.querySelectorAll("select").forEach(s => s.selectedIndex = 0);
+
     document.getElementById("registros").appendChild(clone);
 }
 
@@ -4137,6 +4167,16 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
 });
+
+document.addEventListener("change", function(e){
+    if(e.target.classList.contains("os_select")){
+        const selected = e.target.selectedOptions[0]
+        const item = selected ? selected.dataset.item : ""
+
+        const container = e.target.closest(".registro")
+        container.querySelector(".item_paint").value = item
+    }
+})
 </script>
 
 """
