@@ -4165,9 +4165,9 @@ def lancar_multiplo():
         atividades = request.form.getlist('atividade[]')
         observacoes = request.form.getlist('observacao[]')
 
-        coparticipantes = request.form.getlist("coparticipantes[]")
-
-        destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
+        coparticipantes_all = request.form.getlist("coparticipantes[]")
+        
+        index_cop = 0  # controle manual
 
         for i in range(len(datas)):
 
@@ -4177,6 +4177,16 @@ def lancar_multiplo():
             duracao = duracoes[i]
             atividade = atividades[i]
             obs = observacoes[i]
+        
+            # pega os selecionados da linha atual
+            coparticipantes_linha = request.form.getlist(f"coparticipantes[{i}]") \
+                if f"coparticipantes[{i}]" in request.form else []
+        
+            # fallback (caso não use indexado)
+            if not coparticipantes_linha:
+                coparticipantes_linha = []
+        
+            destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes_linha]
 
             if not duracao:
                 continue
@@ -4276,8 +4286,25 @@ def lancar_multiplo():
     </div>
 
     <div>Observação:
-        <input type="text" name="observacao[]">
+        <textarea name="observacao[]" rows="3"
+            style="
+                width:100%;
+                border:1px solid #ccc;
+                border-radius:6px;
+                padding:6px;
+                resize:vertical;
+            "></textarea>
     </div>
+
+    <div>Co-participantes:
+    <select name="coparticipantes[{{ loop.index0 }}][]" multiple class="coparticipantes" size=5>
+        {% for c in colaboradores %}
+            {% if c.id != session["user_id"] %}
+                <option value="{{ c.id }}">{{ c.nome }}</option>
+            {% endif %}
+        {% endfor %}
+    </select>
+</div>
 
     <button type="button" onclick="duplicar(this)">📄 Duplicar</button>
     <button type="button" onclick="remover(this)">❌ Remover</button>
@@ -4288,17 +4315,6 @@ def lancar_multiplo():
 
 <button type="button" onclick="adicionar()">➕ Adicionar registro</button>
 
-<div style="margin-top:10px;">
-    <label>Co-participantes</label><br>
-    <select name="coparticipantes[]" multiple size="6" style="width:100%;">
-        {% for c in colaboradores %}
-            {% if c.id != session["user_id"] %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
-            {% endif %}
-        {% endfor %}
-    </select>
-</div>
-
 <button class="btn" style="margin-top:15px;">
     Salvar Lançamentos
 </button>
@@ -4306,6 +4322,10 @@ def lancar_multiplo():
 </form>
 
 <script>
+document.addEventListener("DOMContentLoaded", function(){
+    atualizarNomes()
+})
+
 // Preencher item automaticamente
 document.addEventListener("change", function(e){
     if(e.target.classList.contains("os_select")){
@@ -4323,19 +4343,40 @@ function adicionar(){
     const clone = base.cloneNode(true)
 
     clone.querySelectorAll("input").forEach(i => i.value = "")
-    clone.querySelector("input[type='date']").value =
-        new Date().toISOString().split('T')[0]
-
-    clone.querySelectorAll("select").forEach(s => s.selectedIndex = 0)
+    clone.querySelectorAll("select").forEach(s => s.selectedIndex = -1)
 
     document.getElementById("registros").appendChild(clone)
+
+    atualizarNomes()
 }
 
-// Remover linha
+function duplicar(btn){
+    const linha = btn.closest(".registro")
+    const clone = linha.cloneNode(true)
+
+    // copiar valores corretamente
+    const selectsOriginais = linha.querySelectorAll("select")
+    const selectsClone = clone.querySelectorAll("select")
+
+    selectsOriginais.forEach((sel, i) => {
+        for (let j = 0; j < sel.options.length; j++) {
+            selectsClone[i].options[j].selected = sel.options[j].selected
+        }
+    })
+
+    const duracao = clone.querySelector("input[name='duracao[]']")
+    if(duracao) duracao.value = ""
+
+    document.getElementById("registros").appendChild(clone)
+
+    atualizarNomes()
+}
+
 function remover(btn){
     const registros = document.querySelectorAll(".registro")
     if(registros.length > 1){
         btn.parentElement.remove()
+        atualizarNomes()
     }
 }
 
@@ -4352,16 +4393,15 @@ document.addEventListener("input", function(e){
     }
 })
 
-function duplicar(btn){
-    const linha = btn.closest(".registro")
-    const clone = linha.cloneNode(true)
-
-    // limpa só duração (evita erro de lançamento duplicado sem querer)
-    const duracao = clone.querySelector("input[name='duracao[]']")
-    if(duracao) duracao.value = ""
-
-    document.getElementById("registros").appendChild(clone)
+function atualizarNomes(){
+    document.querySelectorAll(".registro").forEach((linha, i) => {
+        const select = linha.querySelector(".coparticipantes")
+        if(select){
+            select.name = `coparticipantes[${i}][]`
+        }
+    })
 }
+
 </script>
 """
 
