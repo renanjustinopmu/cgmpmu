@@ -3684,8 +3684,8 @@ def lancar():
     
         item = request.form.get('item')
         os_codigo = request.form.get('os')
-        atividade = request.form.get('atividade')
-        observacoes = request.form.get('observacoes')
+        atividades = request.form.getlist('atividade[]')
+        obs_individual = request.form.getlist('obs_individual[]')
         coparticipantes = request.form.getlist("coparticipantes[]")
     
         requisicoes_ids = request.form.getlist("requisicoes[]")
@@ -3699,7 +3699,11 @@ def lancar():
     
         # lista de colaboradores que receberão o lançamento
         destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
-        for data, duracao in zip(datas, duracoes):
+        for i in range(len(datas)):
+            data = datas[i]
+            duracao = duracoes[i]
+            atividade = atividades[i]
+            obs_linha = obs_individual[i]
             if not duracao:
                 continue
             try:
@@ -3721,7 +3725,7 @@ def lancar():
             for colab_id in destinatarios:
             
                 if colab_id == session["user_id"]:
-                    obs_final = observacoes
+                    obs_final = obs_linha or observacoes
                 else:
                     obs_final = f"Lançamento automático da O.S {os_codigo} por {session['user']}"
             
@@ -3909,13 +3913,29 @@ def lancar():
     <h4>Registros de Horas</h4>
 
     <div id="registros">
-        <div class="registro">
-            <input type="date" name="data[]" value="{{ data_padrao }}"
-                   min="2026-01-01" max="2026-12-31" required>
-
-            <input type="text" name="duracao[]" placeholder="HH:MM" required pattern="^\d{1,4}:\d{2}$">
-
-            <button type="button" onclick="remover(this)">❌</button>
+        <div class="registro" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
+    
+            <div>Data:
+                <input type="date" name="data[]" value="{{ data_padrao }}" required>
+            </div>
+    
+            <div>Duração:
+                <input type="text" name="duracao[]" placeholder="HH:MM" required>
+            </div>
+    
+            <div>Atividade:
+                <select name="atividade[]">
+                    <option>1. Planejamento</option>
+                    <option>2. Execução</option>
+                    <option>3. Relatório</option>
+                </select>
+            </div>
+    
+            <div>Observação:
+                <input type="text" name="obs_individual[]">
+            </div>
+    
+            <button type="button" onclick="remover(this)">❌ Remover</button>
         </div>
     </div>
 
@@ -4084,7 +4104,8 @@ document.addEventListener("DOMContentLoaded", function () {
 function adicionar() {
     const base = document.querySelector(".registro");
     const clone = base.cloneNode(true);
-    clone.querySelector("input[name='duracao[]']").value = "";
+    clone.querySelectorAll("input").forEach(i => i.value = "");
+    clone.querySelector("input[type='date']").value = new Date().toISOString().split('T')[0];
     document.getElementById("registros").appendChild(clone);
 }
 
@@ -9192,6 +9213,28 @@ canvas { background:white; border-radius:12px;
     </div>
 
     <div class="card">
+        <h4>Requisições com Nota</h4>
+
+        <div style="margin-top:8px;">
+            <div>
+                <span style="color:#666;">Qtd:</span><br>
+                <strong>
+                    {{ card_req_nota.qtd_req_nota }}
+                    ({{ perc_qtd_req_nota|round(2) }}%)
+                </strong>
+            </div>
+
+            <div style="margin-top:10px;">
+                <span style="color:#666;">Valor:</span><br>
+                <strong>
+                    R$ {{ fmt_br(card_req_nota.valor_req_nota) }}
+                    ({{ perc_valor_req_nota|round(2) }}%)
+                </strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
         <h4>Benefício Financeiro</h4>
         <strong>
             R$ {{ fmt_br(cards_notas.beneficio) }}
@@ -9283,29 +9326,7 @@ canvas { background:white; border-radius:12px;
 <div class="chart-box" style="height:400px;">
     <canvas id="notas_sigla"></canvas>
 </div>
-<div class="cards">
-    <div class="card">
-        <h4>Requisições com Nota</h4>
 
-        <div style="margin-top:8px;">
-            <div>
-                <span style="color:#666;">Qtd:</span><br>
-                <strong>
-                    {{ card_req_nota.qtd_req_nota }}
-                    ({{ perc_qtd_req_nota|round(2) }}%)
-                </strong>
-            </div>
-
-            <div style="margin-top:10px;">
-                <span style="color:#666;">Valor:</span><br>
-                <strong>
-                    R$ {{ fmt_br(card_req_nota.valor_req_nota) }}
-                    ({{ perc_valor_req_nota|round(2) }}%)
-                </strong>
-            </div>
-        </div>
-    </div>
-</div>
 <script>
 Chart.register(ChartDataLabels);
 
