@@ -4131,6 +4131,249 @@ document.addEventListener("DOMContentLoaded", function () {
         perfil=session['perfil']
     )
 
+@app.route('/lancar_multiplo', methods=['GET', 'POST'])
+def lancar_multiplo():
+    if 'user' not in session:
+        return redirect('/')
+
+    from datetime import datetime, date
+
+    con = get_db()
+    cur = con.cursor()
+
+    # -------------------------
+    # CARREGAR OS
+    # -------------------------
+    cur.execute("SELECT codigo, item_paint, resumo FROM os ORDER BY codigo")
+    oss = cur.fetchall()
+
+    # -------------------------
+    # COLABORADORES
+    # -------------------------
+    cur.execute("SELECT id, nome FROM colaboradores ORDER BY nome")
+    colaboradores = cur.fetchall()
+
+    # -------------------------
+    # PROCESSAR POST
+    # -------------------------
+    if request.method == 'POST':
+
+        os_list = request.form.getlist('os[]')
+        itens = request.form.getlist('item[]')
+        datas = request.form.getlist('data[]')
+        duracoes = request.form.getlist('duracao[]')
+        atividades = request.form.getlist('atividade[]')
+        observacoes = request.form.getlist('observacao[]')
+
+        coparticipantes = request.form.getlist("coparticipantes[]")
+
+        destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
+
+        for i in range(len(datas)):
+
+            os_codigo = os_list[i]
+            item = itens[i]
+            data = datas[i]
+            duracao = duracoes[i]
+            atividade = atividades[i]
+            obs = observacoes[i]
+
+            if not duracao:
+                continue
+
+            try:
+                h, m = map(int, duracao.split(":"))
+                if m >= 60:
+                    raise ValueError
+            except:
+                continue
+
+            minutos = h * 60 + m
+
+            dt = datetime.strptime(data, "%Y-%m-%d")
+            if dt.year != 2026:
+                con.close()
+                return "Só é permitido lançar horas em 2026"
+
+            duracao_fmt = f"{minutos//60:02d}:{minutos%60:02d}"
+
+            for colab_id in destinatarios:
+
+                if colab_id == session["user_id"]:
+                    obs_final = obs
+                else:
+                    obs_final = f"Lançamento automático da O.S {os_codigo} por {session['user']}"
+                    if obs:
+                        obs_final += f" | {obs}"
+
+                cur.execute("""
+                    INSERT INTO horas
+                    (colaborador_id, data, item_paint, os_codigo,
+                     atividade, hora_inicio, hora_fim,
+                     duracao, duracao_minutos, observacoes)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    colab_id,
+                    data,
+                    item,
+                    os_codigo,
+                    atividade,
+                    None,
+                    None,
+                    duracao_fmt,
+                    minutos,
+                    obs_final
+                ))
+
+        con.commit()
+        con.close()
+        return redirect('/menu')
+
+    # -------------------------
+    # HTML
+    # -------------------------
+    data_padrao = date.today().isoformat()
+    con.close()
+
+    form_html = """
+<h3>Lançamento Múltiplo (Simples)</h3>
+
+<form method="post">
+
+<div id="registros">
+
+<div class="registro" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
+
+    <div>O.S:
+        <select name="os[]" class="os_select" required>
+            <option value=""></option>
+            {% for o in oss %}
+                <option value="{{ o.codigo }}" data-item="{{ o.item_paint }}">
+                    {{ o.codigo }} - {{ o.resumo }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div>Item PAINT:
+        <input type="text" name="item[]" class="item_paint" readonly>
+    </div>
+
+    <div>Data:
+        <input type="date" name="data[]" value="{{ data_padrao }}" required>
+    </div>
+
+    <div>Duração:
+        <input type="text" name="duracao[]" placeholder="HH:MM" required>
+    </div>
+
+    <div>Atividade:
+        <select name="atividade[]">
+            <option>1. Planejamento</option>
+            <option>2. Execução</option>
+            <option>3. Relatório</option>
+        </select>
+    </div>
+
+    <div>Observação:
+        <input type="text" name="observacao[]">
+    </div>
+
+    <button type="button" onclick="duplicar(this)">📄 Duplicar</button>
+    <button type="button" onclick="remover(this)">❌ Remover</button>
+
+</div>
+
+</div>
+
+<button type="button" onclick="adicionar()">➕ Adicionar registro</button>
+
+<div style="margin-top:10px;">
+    <label>Co-participantes</label><br>
+    <select name="coparticipantes[]" multiple size="6" style="width:100%;">
+        {% for c in colaboradores %}
+            {% if c.id != session["user_id"] %}
+                <option value="{{ c.id }}">{{ c.nome }}</option>
+            {% endif %}
+        {% endfor %}
+    </select>
+</div>
+
+<button class="btn" style="margin-top:15px;">
+    Salvar Lançamentos
+</button>
+
+</form>
+
+<script>
+// Preencher item automaticamente
+document.addEventListener("change", function(e){
+    if(e.target.classList.contains("os_select")){
+        const selected = e.target.selectedOptions[0]
+        const item = selected ? selected.dataset.item : ""
+
+        const container = e.target.closest(".registro")
+        container.querySelector(".item_paint").value = item
+    }
+})
+
+// Adicionar linha
+function adicionar(){
+    const base = document.querySelector(".registro")
+    const clone = base.cloneNode(true)
+
+    clone.querySelectorAll("input").forEach(i => i.value = "")
+    clone.querySelector("input[type='date']").value =
+        new Date().toISOString().split('T')[0]
+
+    clone.querySelectorAll("select").forEach(s => s.selectedIndex = 0)
+
+    document.getElementById("registros").appendChild(clone)
+}
+
+// Remover linha
+function remover(btn){
+    const registros = document.querySelectorAll(".registro")
+    if(registros.length > 1){
+        btn.parentElement.remove()
+    }
+}
+
+// Máscara HH:MM
+document.addEventListener("input", function(e){
+    if(e.target.name === "duracao[]"){
+        let v = e.target.value.replace(/\\D/g, "")
+
+        if(v.length >= 3){
+            e.target.value = v.slice(0, v.length-2) + ":" + v.slice(-2)
+        } else {
+            e.target.value = v
+        }
+    }
+})
+
+function duplicar(btn){
+    const linha = btn.closest(".registro")
+    const clone = linha.cloneNode(true)
+
+    // limpa só duração (evita erro de lançamento duplicado sem querer)
+    const duracao = clone.querySelector("input[name='duracao[]']")
+    if(duracao) duracao.value = ""
+
+    document.getElementById("registros").appendChild(clone)
+}
+</script>
+"""
+
+    return render_template_string(
+        BASE.replace("{% block content %}{% endblock %}", form_html),
+        oss=oss,
+        colaboradores=colaboradores,
+        data_padrao=data_padrao,
+        user=session['user'],
+        perfil=session['perfil']
+    )
+
 # -------------------------
 # Relatórios
 # -------------------------
