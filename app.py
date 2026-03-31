@@ -3682,14 +3682,10 @@ def lancar():
     # -------------------------
     if request.method == 'POST':
     
-        os_list = request.form.getlist('os[]')
-        itens = request.form.getlist('item[]')
-        datas = request.form.getlist('data[]')
-        duracoes = request.form.getlist('duracao[]')
-        atividades = request.form.getlist('atividade[]')
-        obs_individual = request.form.getlist('obs_individual[]')
-        observacoes = request.form.get("observacoes")
-        
+        item = request.form.get('item')
+        os_codigo = request.form.get('os')
+        atividade = request.form.get('atividade')
+        observacoes = request.form.get('observacoes')
         coparticipantes = request.form.getlist("coparticipantes[]")
     
         requisicoes_ids = request.form.getlist("requisicoes[]")
@@ -3703,14 +3699,7 @@ def lancar():
     
         # lista de colaboradores que receberão o lançamento
         destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
-        for i in range(len(datas)):
-            os_codigo = os_list[i]
-            item = itens[i]
-            data = datas[i]
-            duracao = duracoes[i]
-            atividade = atividades[i]
-            obs_linha = obs_individual[i]
-            
+        for data, duracao in zip(datas, duracoes):
             if not duracao:
                 continue
             try:
@@ -3732,7 +3721,7 @@ def lancar():
             for colab_id in destinatarios:
             
                 if colab_id == session["user_id"]:
-                    obs_final = obs_linha or observacoes
+                    obs_final = observacoes
                 else:
                     obs_final = f"Lançamento automático da O.S {os_codigo} por {session['user']}"
             
@@ -3853,6 +3842,23 @@ def lancar():
 
 <form method="post">
 
+    <div>O.S:
+        <select name="os" id="os_select" required>
+            <option value=""></option>
+            {% for o in oss %}
+                <option value="{{ o.codigo }}"
+                        data-item="{{ o.item_paint }}"
+                        {% if os_pre == o.codigo %}selected{% endif %}>
+                    {{ o.codigo }}{% if o.resumo %} - {{ o.resumo }}{% endif %}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div>Item PAINT:
+        <input type="text" id="item_paint" name="item" readonly>
+    </div>
+
     <!-- REQUISIÇÕES -->
     <div id="box_requisicoes" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
         <h4>Requisições Delegadas</h4>
@@ -3892,54 +3898,26 @@ def lancar():
         </div>
     </div>
 
+    <div>Atividade:
+        <select name="atividade" required>
+            <option>1. Planejamento</option>
+            <option>2. Execução</option>
+            <option>3. Relatório</option>
+        </select>
+    </div>
+
     <h4>Registros de Horas</h4>
 
     <div id="registros">
+        <div class="registro">
+            <input type="date" name="data[]" value="{{ data_padrao }}"
+                   min="2026-01-01" max="2026-12-31" required>
 
-    <div class="registro" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
+            <input type="text" name="duracao[]" placeholder="HH:MM" required pattern="^\d{1,4}:\d{2}$">
 
-        <div>O.S:
-            <select name="os[]" class="os_select" required>
-                <option value=""></option>
-                {% for o in oss %}
-                    <option value="{{ o.codigo }}"
-                            data-item="{{ o.item_paint }}"
-                            {% if os_pre == o.codigo %}selected{% endif %}>
-                        {{ o.codigo }} - {{ o.resumo }}
-                    </option>
-                {% endfor %}
-            </select>
+            <button type="button" onclick="remover(this)">❌</button>
         </div>
-
-        <div>Item PAINT:
-            <input type="text" name="item[]" class="item_paint" readonly>
-        </div>
-
-        <div>Data:
-            <input type="date" name="data[]" value="{{ data_padrao }}" required>
-        </div>
-
-        <div>Duração:
-            <input type="text" name="duracao[]" placeholder="HH:MM" required>
-        </div>
-
-        <div>Atividade:
-            <select name="atividade[]">
-                <option>1. Planejamento</option>
-                <option>2. Execução</option>
-                <option>3. Relatório</option>
-            </select>
-        </div>
-
-        <div>Observação:
-            <input type="text" name="obs_individual[]">
-        </div>
-
-        <button type="button" onclick="remover(this)">❌ Remover</button>
-
     </div>
-
-</div>
 
     <!-- ATENDIMENTO OS 1.15 -->
     <div id="box_atendimento" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
@@ -4032,17 +4010,16 @@ def lancar():
         </div>
 
         <div>Observação:
-            <textarea name="obs_individual[]" rows="3"
-                style="
-                    width:100%;
-                    border:1px solid #ccc;
-                    border-radius:6px;
-                    padding:6px;
-                "></textarea>
+            <textarea name="observacao"></textarea>
         </div>
     </div>
 
     <button type="button" onclick="adicionar()">➕ Adicionar registro</button>
+
+    <div style="margin-top:10px;">
+        <label>Observação geral:</label>
+        <textarea name="observacoes" rows="4" style="width:100%;"></textarea>
+    </div>
 
     <div style="margin-top:10px;">
     <label>Co-participantes</label><br>
@@ -4062,40 +4039,36 @@ def lancar():
 </form>
 
 <script>
-document.addEventListener("change", function(e){
+document.addEventListener("DOMContentLoaded", function () {
 
-    if(e.target.classList.contains("os_select")){
+    const osSelect = document.getElementById("os_select");
+    const itemInput = document.getElementById("item_paint");
 
-        const select = e.target
-        const selected = select.selectedOptions[0]
-        const codigoOS = select.value
+    const boxReq = document.getElementById("box_requisicoes");
+    const boxAtendimento = document.getElementById("box_atendimento");
+    const boxConsultoria = document.getElementById("box_consultoria");
 
-        const container = select.closest(".registro")
+    osSelect.addEventListener("change", function () {
 
-        // ITEM PAINT
-        const itemInput = container.querySelector(".item_paint")
-        itemInput.value = selected ? selected.dataset.item : ""
+        const selected = this.selectedOptions[0];
+        const codigoOS = this.value;
 
-        // BOXES GERAIS
-        const boxReq = document.getElementById("box_requisicoes")
-        const boxAtendimento = document.getElementById("box_atendimento")
-        const boxConsultoria = document.getElementById("box_consultoria")
+        itemInput.value = selected ? selected.dataset.item : "";
 
-        // REQUISIÇÕES
-        if (["1.4/2026","1.1/2026","1.6/2026"].includes(codigoOS)) {
-            boxReq.style.display = "block"
+        // requisições
+        if (codigoOS === "1.4/2026" ||
+            codigoOS === "1.1/2026" ||
+            codigoOS === "1.6/2026") {
+            boxReq.style.display = "block";
         } else {
-            boxReq.style.display = "none"
+            boxReq.style.display = "none";
         }
 
-        // ESPECIAIS
-        boxAtendimento.style.display = (codigoOS === "1.15/2026") ? "block" : "none"
-
+        // OS específicas
+        boxAtendimento.style.display = (codigoOS === "1.15/2026") ? "block" : "none";
         boxConsultoria.style.display =
-            (codigoOS === "1.14/2026" || codigoOS === "1.16/2026") ? "block" : "none"
-    }
-
-});
+            (codigoOS === "1.14/2026" || codigoOS === "1.16/2026") ? "block" : "none";
+    });
 
     // busca rápida
     document.getElementById("busca_req").addEventListener("keyup", function () {
@@ -4111,13 +4084,7 @@ document.addEventListener("change", function(e){
 function adicionar() {
     const base = document.querySelector(".registro");
     const clone = base.cloneNode(true);
-
-    clone.querySelectorAll("input").forEach(i => i.value = "");
-    clone.querySelector("input[type='date']").value =
-        new Date().toISOString().split('T')[0];
-
-    clone.querySelectorAll("select").forEach(s => s.selectedIndex = 0);
-
+    clone.querySelector("input[name='duracao[]']").value = "";
     document.getElementById("registros").appendChild(clone);
 }
 
@@ -4149,29 +4116,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
 });
-
-document.addEventListener("change", function(e){
-    if(e.target.classList.contains("os_select")){
-        const selected = e.target.selectedOptions[0]
-        const item = selected ? selected.dataset.item : ""
-
-        const container = e.target.closest(".registro")
-        container.querySelector(".item_paint").value = item
-    }
-})
-
-document.addEventListener("DOMContentLoaded", function () {
-
-    document.querySelectorAll(".os_select").forEach(select => {
-        const selected = select.selectedOptions[0]
-        if(selected){
-            const item = selected.dataset.item || ""
-            select.closest(".registro")
-                  .querySelector(".item_paint").value = item
-        }
-    })
-
-})
 </script>
 
 """
