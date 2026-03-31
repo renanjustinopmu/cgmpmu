@@ -4021,7 +4021,7 @@ def lancar():
         <textarea name="observacoes" rows="4" style="width:100%;"></textarea>
     </div>
 
-    <div style="margin-top:10px;">
+    <div id="box_coparticipantes" style="margin-top:10px;">
     <label>Co-participantes</label><br>
     <select name="coparticipantes[]" multiple size="6" style="width:100%;">
         {% for c in colaboradores %}
@@ -4047,6 +4047,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const boxReq = document.getElementById("box_requisicoes");
     const boxAtendimento = document.getElementById("box_atendimento");
     const boxConsultoria = document.getElementById("box_consultoria");
+    const boxCoparticipantes = document.getElementById("box_coparticipantes");
 
     osSelect.addEventListener("change", function () {
 
@@ -4054,7 +4055,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const codigoOS = this.value;
 
         itemInput.value = selected ? selected.dataset.item : "";
-
+    
         // requisições
         if (codigoOS === "1.4/2026" ||
             codigoOS === "1.1/2026" ||
@@ -4064,6 +4065,17 @@ document.addEventListener("DOMContentLoaded", function () {
             boxReq.style.display = "none";
         }
 
+        // OCULTAR COPARTICIPANTES PARA OS ESPECIAIS
+        if (codigoOS === "1.15/2026" || 
+            codigoOS === "1.14/2026" || 
+            codigoOS === "1.16/2026") {
+        
+            boxCoparticipantes.style.display = "none";
+        
+        } else {
+            boxCoparticipantes.style.display = "block";
+        }
+        
         // OS específicas
         boxAtendimento.style.display = (codigoOS === "1.15/2026") ? "block" : "none";
         boxConsultoria.style.display =
@@ -4141,20 +4153,16 @@ def lancar_multiplo():
     con = get_db()
     cur = con.cursor()
 
-    # -------------------------
-    # CARREGAR OS
-    # -------------------------
+    # OS
     cur.execute("SELECT codigo, item_paint, resumo FROM os ORDER BY codigo")
     oss = cur.fetchall()
 
-    # -------------------------
-    # COLABORADORES
-    # -------------------------
+    # Colaboradores
     cur.execute("SELECT id, nome FROM colaboradores ORDER BY nome")
     colaboradores = cur.fetchall()
 
     # -------------------------
-    # PROCESSAR POST
+    # POST
     # -------------------------
     if request.method == 'POST':
 
@@ -4165,10 +4173,6 @@ def lancar_multiplo():
         atividades = request.form.getlist('atividade[]')
         observacoes = request.form.getlist('observacao[]')
 
-        coparticipantes_all = request.form.getlist("coparticipantes[]")
-        
-        index_cop = 0  # controle manual
-
         for i in range(len(datas)):
 
             os_codigo = os_list[i]
@@ -4177,15 +4181,9 @@ def lancar_multiplo():
             duracao = duracoes[i]
             atividade = atividades[i]
             obs = observacoes[i]
-        
-            # pega os selecionados da linha atual
-            coparticipantes_linha = request.form.getlist(f"coparticipantes[{i}]") \
-                if f"coparticipantes[{i}]" in request.form else []
-        
-            # fallback (caso não use indexado)
-            if not coparticipantes_linha:
-                coparticipantes_linha = []
-        
+
+            # ✅ COPARTICIPANTES DA LINHA
+            coparticipantes_linha = request.form.getlist(f"coparticipantes[{i}]")
             destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes_linha]
 
             if not duracao:
@@ -4246,7 +4244,7 @@ def lancar_multiplo():
     con.close()
 
     form_html = """
-<h3>Lançamento Múltiplo (Simples)</h3>
+<h3>Lançamento Múltiplo</h3>
 
 <form method="post">
 
@@ -4285,26 +4283,20 @@ def lancar_multiplo():
         </select>
     </div>
 
+    <!-- ✅ OBSERVAÇÃO EM TEXTAREA -->
     <div>Observação:
         <textarea name="observacao[]" rows="3"
-            style="
-                width:100%;
-                border:1px solid #ccc;
-                border-radius:6px;
-                padding:6px;
-                resize:vertical;
-            "></textarea>
+            style="width:100%; border:1px solid #ccc; border-radius:6px; padding:6px;"></textarea>
     </div>
 
+    <!-- ✅ COPARTICIPANTE POR LINHA -->
     <div>Co-participantes:
-    <select name="coparticipantes[{{ loop.index0 }}][]" multiple class="coparticipantes" size=5>
-        {% for c in colaboradores %}
-            {% if c.id != session["user_id"] %}
+        <select name="coparticipantes[0]" class="coparticipantes" multiple size="4" style="width:100%;">
+            {% for c in colaboradores %}
                 <option value="{{ c.id }}">{{ c.nome }}</option>
-            {% endif %}
-        {% endfor %}
-    </select>
-</div>
+            {% endfor %}
+        </select>
+    </div>
 
     <button type="button" onclick="duplicar(this)">📄 Duplicar</button>
     <button type="button" onclick="remover(this)">❌ Remover</button>
@@ -4322,27 +4314,35 @@ def lancar_multiplo():
 </form>
 
 <script>
-document.addEventListener("DOMContentLoaded", function(){
-    atualizarNomes()
-})
 
-// Preencher item automaticamente
+// Atualiza index dos nomes (ESSENCIAL)
+function atualizarNomes(){
+    document.querySelectorAll(".registro").forEach((reg, i) => {
+        const select = reg.querySelector(".coparticipantes")
+        if(select){
+            select.name = "coparticipantes[" + i + "]"
+        }
+    })
+}
+
+// OS -> item paint
 document.addEventListener("change", function(e){
     if(e.target.classList.contains("os_select")){
         const selected = e.target.selectedOptions[0]
         const item = selected ? selected.dataset.item : ""
 
-        const container = e.target.closest(".registro")
-        container.querySelector(".item_paint").value = item
+        e.target.closest(".registro")
+                .querySelector(".item_paint").value = item
     }
 })
 
-// Adicionar linha
+// adicionar
 function adicionar(){
     const base = document.querySelector(".registro")
     const clone = base.cloneNode(true)
 
     clone.querySelectorAll("input").forEach(i => i.value = "")
+    clone.querySelectorAll("textarea").forEach(t => t.value = "")
     clone.querySelectorAll("select").forEach(s => s.selectedIndex = -1)
 
     document.getElementById("registros").appendChild(clone)
@@ -4350,37 +4350,26 @@ function adicionar(){
     atualizarNomes()
 }
 
+// duplicar (mantém valores)
 function duplicar(btn){
     const linha = btn.closest(".registro")
     const clone = linha.cloneNode(true)
-
-    // copiar valores corretamente
-    const selectsOriginais = linha.querySelectorAll("select")
-    const selectsClone = clone.querySelectorAll("select")
-
-    selectsOriginais.forEach((sel, i) => {
-        for (let j = 0; j < sel.options.length; j++) {
-            selectsClone[i].options[j].selected = sel.options[j].selected
-        }
-    })
-
-    const duracao = clone.querySelector("input[name='duracao[]']")
-    if(duracao) duracao.value = ""
 
     document.getElementById("registros").appendChild(clone)
 
     atualizarNomes()
 }
 
+// remover
 function remover(btn){
-    const registros = document.querySelectorAll(".registro")
-    if(registros.length > 1){
-        btn.parentElement.remove()
+    const regs = document.querySelectorAll(".registro")
+    if(regs.length > 1){
+        btn.closest(".registro").remove()
         atualizarNomes()
     }
 }
 
-// Máscara HH:MM
+// máscara
 document.addEventListener("input", function(e){
     if(e.target.name === "duracao[]"){
         let v = e.target.value.replace(/\\D/g, "")
@@ -4393,14 +4382,7 @@ document.addEventListener("input", function(e){
     }
 })
 
-function atualizarNomes(){
-    document.querySelectorAll(".registro").forEach((linha, i) => {
-        const select = linha.querySelector(".coparticipantes")
-        if(select){
-            select.name = `coparticipantes[${i}][]`
-        }
-    })
-}
+document.addEventListener("DOMContentLoaded", atualizarNomes)
 
 </script>
 """
