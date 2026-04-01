@@ -7660,7 +7660,7 @@ def importar_requisicoes_completa_background(arquivo_bytes):
                     EXCLUDED.servidor_id IS NOT NULL
                     OR requisicoes.servidor_id IS NULL
                 );
-
+        """)
         progresso_import["inseridos"] = cur.rowcount
         progresso_import["duplicados"] = progresso_import["total"] - cur.rowcount
 
