@@ -3855,7 +3855,8 @@ def lancar():
         <div class="registro" style=" background:#f9fbff; border:1px solid #ccc; padding:10px; margin-bottom:10px;">
     
             <div>O.S:
-                <select name="os[]">
+                <select name="os[]" required>
+                    <option value="">Selecione uma O.S</option>
                     {% for o in oss %}
                         <option value="{{ o.codigo }}"
                                 data-item="{{ o.item_paint }}"
@@ -4059,9 +4060,15 @@ document.addEventListener("change", function(e) {
         const codigoOS = select.value;
         const registro = select.closest(".registro");
 
-        const selected = select.selectedOptions[0];
         const itemInput = registro.querySelector("input[name='item[]']");
-        itemInput.value = selected ? selected.dataset.item : "";
+
+        const selected = select.selectedOptions[0];
+
+        if (!select.value) {
+            itemInput.value = "";
+        } else {
+            itemInput.value = selected.dataset.item;
+        }
 
         const boxReq = registro.querySelector(".box_requisicoes");
         const boxAtendimento = registro.querySelector(".box_atendimento");
@@ -4113,10 +4120,8 @@ function adicionar() {
     const selectsOriginais = base.querySelectorAll("select");
     const selectsClone = clone.querySelectorAll("select");
 
-    selectsOriginais.forEach((sel, i) => {
-        for (let j = 0; j < sel.options.length; j++) {
-            selectsClone[i].options[j].selected = sel.options[j].selected;
-        }
+    selectsClone.forEach(sel => {
+        sel.selectedIndex = 0; // volta para opção vazia
     });
 
     // LIMPAR CAMPOS
@@ -4425,24 +4430,28 @@ def relatorios():
     html += "</table>"
 
     if perfil == "admin":
-        html += """
-            <a class='btn' href='/export'>Exportar todas as horas (CSV)</a>
-    
-            <button class='btn' style='margin-left:10px' onclick='exportarFiltrado()'>
-                Exportar filtrado
-            </button>
-    
-            <a class="btn" style="margin-left:10px" href="/export_preventivas">
-                Exportar Preventivas
-            </a>
-        """
-    
+    html += f"""
+        <div style="margin-top:15px;">
+        
+        <select id="mes_export" style="padding:6px;">
+            <option value="">Selecione o mês...</option>
+    """
+
+    for num, nome in meses.items():
+        selected = "selected" if num == mes_filtro else ""
+        html += f"<option value='{num}' {selected}>{nome}</option>"
+
     html += """
-            <a class='btn' style='margin-left:10px; background:#16a085;'
-               href='/export_minhas'>
-               Exportar minhas horas
-            </a>
-        </div>
+        </select>
+
+        <button class="btn" onclick="exportarMes()" style="margin-left:10px;">
+            Exportar mês
+        </button>
+
+        <a class="btn" style="margin-left:10px" href="/export_preventivas">
+            Exportar Preventivas
+        </a>
+    </div>
     """
 
     # ---------------- SCRIPTS ----------------
@@ -4459,32 +4468,16 @@ def relatorios():
         });
     });
 
+function exportarMes() {
+    const mes = document.getElementById("mes_export").value;
 
-function exportarFiltrado() {
-    const ids = [];
-
-    document.querySelectorAll("#tabelaMarcacoes tr").forEach((tr, i) => {
-        if (i === 0) return;
-        if (tr.style.display === "none") return;
-
-        const link = tr.querySelector("a");
-        if (!link) return;
-
-        const partes = link.href.split("/editar/");
-        if (partes.length < 2) return;
-
-        ids.push(partes[1]);
-    });
-
-    if (ids.length === 0) {
-        alert("Nenhum registro filtrado para exportar.");
+    if (!mes) {
+        alert("Selecione um mês para exportar.");
         return;
     }
 
-    document.getElementById("ids_filtrados").value = ids.join(",");
-    document.getElementById("formExportFiltrado").submit();
+    window.location.href = "/export?mes=" + mes;
 }
-
     </script>
     """
 
@@ -4845,28 +4838,16 @@ function adicionar() {
     const base = document.querySelector(".registro");
     const clone = base.cloneNode(true);
 
-    // 🔹 pega valores da O.S original
-    const osValue = base.querySelector(".os_select").value;
-    const itemValue = base.querySelector(".item_paint").value;
-
-    // limpa inputs (menos item)
+    // limpa valores
     clone.querySelectorAll("input").forEach(i => {
-        if (i.name !== "item[]") i.value = "";
+        if (i.name === "hora_id[]") {
+            i.value = ""; // novo registro
+        } else if (i.type === "date") {
+            i.value = new Date().toISOString().split('T')[0];
+        } else {
+            i.value = "";
+        }
     });
-
-    // data nova
-    clone.querySelector("input[type='date']").value =
-        new Date().toISOString().split('T')[0];
-
-    // 🔹 mantém a mesma O.S
-    const select = clone.querySelector(".os_select");
-    select.value = osValue;
-
-    // 🔹 mantém item paint
-    clone.querySelector(".item_paint").value = itemValue;
-
-    // 🔹 dispara change pra atualizar regras (requisição, etc)
-    select.dispatchEvent(new Event("change"));
 
     document.getElementById("registros").appendChild(clone);
 }
@@ -5595,73 +5576,73 @@ new Chart(document.getElementById('graficoHoras'), {{
 
 @app.route('/export')
 def export_csv():
-    if 'user' not in session:
+    if 'user' not in session or session["perfil"] != "admin":
         return redirect('/')
 
     import csv, io
-    from datetime import datetime
+
+    mes = request.args.get("mes")
+
+    if not mes:
+        return "Selecione um mês para exportar."
 
     con = get_db()
     cur = con.cursor()
 
     cur.execute("""
-            SELECT
-        h.id AS hora_id,
-        c.nome AS colaborador,
-        h.data,
-        h.item_paint,
-        h.os_codigo,
-        h.atividade,
-        h.duracao,
-        h.duracao_minutos,
-        h.observacoes,
-    
-        -- dados agregados das requisições
-        string_agg(r.chave, ', ') AS requisicoes,
-        COUNT(r.id)               AS qtd_requisicoes,
-        COALESCE(SUM(r.valor_requisicao), 0) AS valor_total_requisicoes,
-    
-        MIN(r.data_inicio)        AS data_inicio_requisicao,
-        MAX(r.data_fim)           AS data_fim_requisicao,
-        string_agg(DISTINCT r.status_analise, ', ') AS status_requisicao,
-        string_agg(DISTINCT r.tipo, ', ')            AS tipo_requisicao,
-        string_agg(DISTINCT r.criterio, ', ')        AS criterio_requisicao
-    
-    FROM horas h
-    JOIN colaboradores c ON c.id = h.colaborador_id
-    LEFT JOIN horas_requisicoes hr ON hr.hora_id = h.id
-    LEFT JOIN requisicoes r ON r.id = hr.requisicao_id
-    
-    GROUP BY
-        h.id, c.nome, h.data, h.hora_inicio, h.hora_fim,
-        h.item_paint, h.os_codigo, h.atividade,
-        h.duracao, h.duracao_minutos, h.observacoes
-    
-    ORDER BY h.data;
+        SELECT
+            h.id AS hora_id,
+            c.nome AS colaborador,
+            h.data,
+            h.item_paint,
+            h.os_codigo,
+            h.atividade,
+            h.duracao,
+            h.duracao_minutos,
+            h.observacoes,
 
-    """)
+            string_agg(r.chave, ', ') AS requisicoes,
+            COUNT(r.id) AS qtd_requisicoes,
+            COALESCE(SUM(r.valor_requisicao), 0) AS valor_total_requisicoes,
+
+            MIN(r.data_inicio) AS data_inicio_requisicao,
+            MAX(r.data_fim) AS data_fim_requisicao,
+            string_agg(DISTINCT r.status_analise, ', ') AS status_requisicao,
+            string_agg(DISTINCT r.tipo, ', ') AS tipo_requisicao,
+            string_agg(DISTINCT r.criterio, ', ') AS criterio_requisicao
+
+        FROM horas h
+        JOIN colaboradores c ON c.id = h.colaborador_id
+        LEFT JOIN horas_requisicoes hr ON hr.hora_id = h.id
+        LEFT JOIN requisicoes r ON r.id = hr.requisicao_id
+
+        WHERE EXTRACT(MONTH FROM h.data) = %s
+
+        GROUP BY
+            h.id, c.nome, h.data,
+            h.item_paint, h.os_codigo, h.atividade,
+            h.duracao, h.duracao_minutos, h.observacoes
+
+        ORDER BY h.data
+    """, (mes,))
+
     rows = cur.fetchall()
     con.close()
 
     si = io.StringIO()
     cw = csv.writer(si, delimiter=";")
 
-    # Cabeçalho
     cw.writerow([
         "Hora ID", "Colaborador", "Data",
         "Item PAINT", "OS", "Atividade",
         "Duração", "Minutos", "Obs",
-        "Requisições", "Qtd Requisições", "Valor Total",
-        "Data Início Req", "Data Fim Req",
-        "Status Req", "Tipo Req", "Critério Req"
+        "Requisições", "Qtd", "Valor Total",
+        "Data Início", "Data Fim",
+        "Status", "Tipo", "Critério"
     ])
 
-
     for r in rows:
-        try:
-            data_fmt = r["data"].strftime("%d/%m/%Y")
-        except:
-            data_fmt = r["data"]
+        data_fmt = r["data"].strftime("%d/%m/%Y") if r["data"] else ""
 
         cw.writerow([
             r["hora_id"],
@@ -5692,7 +5673,7 @@ def export_csv():
         output,
         mimetype="text/csv",
         as_attachment=True,
-        download_name="horas_completo.csv"
+        download_name=f"horas_mes_{mes}.csv"
     )
 
 @app.route('/export_minhas')
@@ -5796,115 +5777,6 @@ def export_minhas():
         mimetype="text/csv",
         as_attachment=True,
         download_name="minhas_horas.csv"
-    )
-
-@app.route('/export_filtrado', methods=['POST'])
-def export_filtrado():
-    if 'user' not in session or session['perfil'] != 'admin':
-        return redirect('/')
-
-    ids_raw = request.form.get("ids", "")
-    if not ids_raw:
-        return "Nenhum ID recebido.", 400
-
-    ids = [x.strip() for x in ids_raw.split(",") if x.strip()]
-
-    import csv, io
-    from datetime import datetime
-    from flask import Response
-
-    con = get_db()
-    cur = con.cursor()
-
-    sql = f"""
-        SELECT
-            h.id AS hora_id,
-            c.nome AS colaborador,
-            h.data,
-            h.item_paint,
-            h.os_codigo,
-            h.atividade,
-            h.duracao,
-            h.duracao_minutos,
-            h.observacoes,
-
-            -- dados agregados das requisições
-            string_agg(r.chave, ', ') AS requisicoes,
-            COUNT(r.id)               AS qtd_requisicoes,
-            -- COALESCE(SUM(r.valor_requisicao), 0) AS valor_total_requisicoes,
-
-            MIN(r.data_inicio)        AS data_inicio_requisicao,
-            MAX(r.data_fim)           AS data_fim_requisicao,
-            string_agg(DISTINCT r.status_analise, ', ') AS status_requisicao,
-            string_agg(DISTINCT r.tipo, ', ')            AS tipo_requisicao,
-            string_agg(DISTINCT r.criterio, ', ')        AS criterio_requisicao
-
-        FROM horas h
-        JOIN colaboradores c ON c.id = h.colaborador_id
-        LEFT JOIN horas_requisicoes hr ON hr.hora_id = h.id
-        LEFT JOIN requisicoes r ON r.id = hr.requisicao_id
-
-        WHERE h.id IN ({",".join(["%s"] * len(ids))})
-
-        GROUP BY
-            h.id, c.nome, h.data,
-            h.item_paint, h.os_codigo, h.atividade,
-            h.duracao, h.duracao_minutos, h.observacoes
-
-        ORDER BY h.data
-    """
-
-    cur.execute(sql, ids)
-    rows = cur.fetchall()
-    con.close()
-
-    # ---------- CSV ----------
-    output = io.StringIO()
-    output.write("\ufeff")  # BOM Excel
-    writer = csv.writer(output, delimiter=";")
-
-    writer.writerow([
-        "Hora ID", "Colaborador", "Data",
-        "Item PAINT", "OS", "Atividade",
-        "Duração", "Minutos", "Obs",
-        "Requisições", "Qtd Requisições",
-        # "Valor Total",
-        "Data Início Req", "Data Fim Req",
-        "Status Req", "Tipo Req", "Critério Req"
-    ])
-
-    for r in rows:
-        try:
-            data_fmt = r["data"].strftime("%d/%m/%Y")
-        except:
-            data_fmt = r["data"]
-
-        writer.writerow([
-            r["hora_id"],
-            r["colaborador"],
-            data_fmt,
-            r["item_paint"],
-            r["os_codigo"],
-            r["atividade"],
-            r["duracao"],
-            r["duracao_minutos"],
-            r["observacoes"],
-            r["requisicoes"] or "",
-            r["qtd_requisicoes"] or 0,
-            # f"{r['valor_total_requisicoes']:.2f}",
-            r["data_inicio_requisicao"],
-            r["data_fim_requisicao"],
-            r["status_requisicao"],
-            r["tipo_requisicao"],
-            r["criterio_requisicao"],
-        ])
-
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition": "attachment; filename=horas_filtradas_completo.csv"
-        }
     )
 
 def minutos_para_hhmm(minutos):
