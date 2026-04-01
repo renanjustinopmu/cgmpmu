@@ -7227,7 +7227,33 @@ def importar_requisicoes_background(arquivo_bytes, data_corte):
                 data_medicao, data_liquidacao, empenho,
                 ficha_despesa, data_corte
             FROM requisicoes_staging
-            ON CONFLICT (chave) DO NOTHING
+            ON CONFLICT (chave) DO UPDATE
+            SET
+                valor_requisicao = CASE
+                    -- só atualiza se valor for diferente
+                    WHEN requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
+                         AND (
+                             -- e a nova data_tramitacao for mais recente
+                             EXCLUDED.data_tramitacao IS NOT NULL
+                             AND (
+                                 requisicoes.data_tramitacao IS NULL
+                                 OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
+                             )
+                         )
+                    THEN EXCLUDED.valor_requisicao
+                    ELSE requisicoes.valor_requisicao
+                END,
+            
+                data_tramitacao = CASE
+                    -- mantém a mais recente sempre
+                    WHEN EXCLUDED.data_tramitacao IS NOT NULL
+                         AND (
+                             requisicoes.data_tramitacao IS NULL
+                             OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
+                         )
+                    THEN EXCLUDED.data_tramitacao
+                    ELSE requisicoes.data_tramitacao
+                END
         """)
 
         progresso_import["inseridos"] = cur.rowcount
@@ -7670,11 +7696,23 @@ def importar_requisicoes_completa_background(arquivo_bytes):
                 secretaria = EXCLUDED.secretaria,
                 requisicao_num = EXCLUDED.requisicao_num,
                 tipo_documento = EXCLUDED.tipo_documento,
-                valor_requisicao = EXCLUDED.valor_requisicao,
+                valor_requisicao = CASE
+                    WHEN requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
+                         AND (
+                             requisicoes.data_tramitacao IS NULL
+                             OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
+                         )
+                    THEN EXCLUDED.valor_requisicao
+                    ELSE requisicoes.valor_requisicao
+                END,
                 nome_solicitante = EXCLUDED.nome_solicitante,
                 data_criacao = EXCLUDED.data_criacao,
                 status_atual = EXCLUDED.status_atual,
-                data_tramitacao = EXCLUDED.data_tramitacao,
+                data_tramitacao = CASE
+                    WHEN EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
+                    THEN EXCLUDED.data_tramitacao
+                    ELSE requisicoes.data_tramitacao
+                END,
                 natureza_despesa = EXCLUDED.natureza_despesa,
                 item_despesa = EXCLUDED.item_despesa,
                 nome_fornecedor = EXCLUDED.nome_fornecedor,
@@ -7795,258 +7833,6 @@ def importar_requisicoes_completo():
 }, 1500);
     </script>
     """)
-
-@app.route("/requisicoes/importar-colar", methods=["GET","POST"])
-def importar_requisicoes_colar():
-
-    if request.method == "GET":
-        return """
-        <h2>Importar Requisições (CTRL + C / CTRL + V)</h2>
-
-        <form method="POST">
-            <textarea name="dados" style="width:100%;height:400px;"></textarea>
-            <br><br>
-            <button type="submit">Importar</button>
-        </form>
-
-        <p>
-        Copie diretamente do Excel e cole aqui.<br>
-        Não precisa salvar arquivo.
-        </p>
-        """
-
-    dados = request.form.get("dados")
-
-    if not dados:
-        return "Nenhum dado enviado."
-
-    import io
-
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute("TRUNCATE requisicoes_staging_completa")
-
-    buffer = io.StringIO()
-
-    linhas = dados.splitlines()
-
-    for linha in linhas:
-
-        if not linha.strip():
-            continue
-
-        col = linha.split("\t")
-
-        if len(col) < 33:
-            continue
-
-        valor = col[5]
-
-        if valor:
-
-            valor = valor.strip()
-
-            if valor.startswith("R$"):
-                valor = valor.replace("R$","").replace(".","").replace(",",".").strip()
-
-        registro = [
-            col[0],
-            col[1],
-            col[2],
-            col[3],
-            col[4],
-            valor,
-            col[6],
-            col[7],
-            col[8],
-            col[9],
-            col[10],
-            col[11],
-            col[13],
-            col[14],
-            col[15],
-            col[16],
-            col[17],
-            col[18],
-            col[19],
-            col[20],
-            col[24],
-            col[25],
-            col[26],
-            col[27],
-            col[28],
-            col[29],
-            col[31],
-            col[32]
-        ]
-
-        buffer.write("\t".join([str(v) if v else "" for v in registro]) + "\n")
-
-    buffer.seek(0)
-
-    cur.copy_from(
-        buffer,
-        "requisicoes_staging_completa",
-        sep="\t",
-        null=""
-    )
-
-    buffer.close()
-
-    # EXECUTA MESMA LÓGICA DO IMPORT COMPLETO
-
-    cur.execute("""
-    INSERT INTO requisicoes (
-        chave, data_corte, secretaria, requisicao_num,
-        tipo_documento, valor_requisicao, nome_solicitante,
-        data_criacao, status_atual, data_tramitacao,
-        natureza_despesa, item_despesa, nome_fornecedor,
-        edital, contrato, data_medicao, data_liquidacao,
-        empenho, ficha_despesa, tipo,
-        criterio, servidor_id, nota, num_nota,
-        oficio, monitoramento, monitoramento_resposta,
-        observacoes, status_analise,
-        sigla
-    )
-
-    SELECT
-        s.chave,
-        s.data_corte,
-        s.secretaria,
-        s.requisicao_num,
-        s.tipo_documento,
-        s.valor_requisicao,
-        s.nome_solicitante,
-        s.data_criacao,
-        s.status_atual,
-        s.data_tramitacao,
-        s.natureza_despesa,
-        s.item_despesa,
-        s.nome_fornecedor,
-        s.edital,
-        s.contrato,
-        s.data_medicao,
-        s.data_liquidacao,
-        s.empenho,
-        s.ficha_despesa,
-
-        CASE
-            WHEN TRIM(s.tipo) IN ('CONTRATAÇÃO','LIQUIDAÇÃO','ADITAMENTO')
-                THEN TRIM(s.tipo)
-
-            WHEN s.tipo IS NULL
-            OR TRIM(s.tipo)=''
-            OR TRIM(s.tipo)='∄'
-            OR TRIM(s.tipo) NOT IN ('CONTRATAÇÃO','LIQUIDAÇÃO','ADITAMENTO')
-
-            THEN
-                CASE
-
-                    WHEN s.tipo_documento IN (
-                    'REQUISIÇÕES DE COMPRAS',
-                    'REQUERIMENTO PARA REGISTRO DE PREÇOS',
-                    'REQUISIÇÃO DE TERMO DE COLABORAÇÃO',
-                    'REQUISIÇÃO DE TERMO DE FOMENTO',
-                    'REQUISIÇÕES CONSOME SALDO',
-                    'REQUISIÇÃO DE PAGAMENTOS DIVERSOS',
-                    'REQUISIÇÃO EXTRA ORÇAMENTARIA',
-                    'CONTRATO DE GESTÃO'
-                    ) THEN 'CONTRATAÇÃO'
-
-                    WHEN s.tipo_documento IN (
-                    'REQUISIÇÕES P/ LIQUIDAR',
-                    'REQUISIÇÕES P/ LIQUIDAR PAGAMENTOS DIVERSOS'
-                    ) THEN 'LIQUIDAÇÃO'
-
-                    WHEN s.tipo_documento IN (
-                    'REQUISIÇÕES P/ ADITAR'
-                    ) THEN 'ADITAMENTO'
-
-                    ELSE NULL
-                END
-        END,
-
-        s.criterio,
-
-        CASE UPPER(TRIM(s.servidor_nome))
-            WHEN 'ANA PAULA' THEN 2
-            WHEN 'ALEXANDRA' THEN 1
-            WHEN 'MICHELLE' THEN 14
-            WHEN 'PAULA' THEN 15
-            WHEN 'PRISCILLA' THEN 17
-            WHEN 'SYRIA' THEN 18
-            WHEN 'THAMY' THEN 19
-            WHEN 'MARIANA CAVANHA' THEN 13
-        END,
-
-        s.nota,
-        s.num_nota,
-        s.oficio,
-        s.monitoramento,
-        s.monitoramento_resposta,
-        s.observacoes,
-
-        CASE
-            WHEN s.criterio IS NOT NULL AND TRIM(s.criterio) <> ''
-            THEN 'ANALISADO'
-        END,
-
-        COALESCE(
-            UPPER(NULLIF(split_part(s.chave,'/',3),'')),
-
-            CASE SUBSTRING(LPAD(s.secretaria::text,2,'0'),1,2)
-                WHEN '07' THEN 'SME'
-                WHEN '09' THEN 'SMS'
-                WHEN '17' THEN 'DMAE'
-            END
-        )
-
-    FROM (
-        SELECT DISTINCT ON (chave) *
-        FROM requisicoes_staging_completa
-        ORDER BY chave
-    ) s
-
-    ON CONFLICT (chave) DO UPDATE
-    SET
-        data_corte = EXCLUDED.data_corte,
-        secretaria = EXCLUDED.secretaria,
-        requisicao_num = EXCLUDED.requisicao_num,
-        tipo_documento = EXCLUDED.tipo_documento,
-        valor_requisicao = EXCLUDED.valor_requisicao,
-        nome_solicitante = EXCLUDED.nome_solicitante,
-        data_criacao = EXCLUDED.data_criacao,
-        status_atual = EXCLUDED.status_atual,
-        data_tramitacao = EXCLUDED.data_tramitacao,
-        natureza_despesa = EXCLUDED.natureza_despesa,
-        item_despesa = EXCLUDED.item_despesa,
-        nome_fornecedor = EXCLUDED.nome_fornecedor,
-        edital = EXCLUDED.edital,
-        contrato = EXCLUDED.contrato,
-        data_medicao = EXCLUDED.data_medicao,
-        data_liquidacao = EXCLUDED.data_liquidacao,
-        empenho = EXCLUDED.empenho,
-        ficha_despesa = EXCLUDED.ficha_despesa,
-        tipo = EXCLUDED.tipo,
-        criterio = EXCLUDED.criterio,
-        servidor_id = EXCLUDED.servidor_id,
-        nota = EXCLUDED.nota,
-        num_nota = EXCLUDED.num_nota,
-        oficio = EXCLUDED.oficio,
-        monitoramento = EXCLUDED.monitoramento,
-        monitoramento_resposta = EXCLUDED.monitoramento_resposta,
-        observacoes = EXCLUDED.observacoes,
-        status_analise = EXCLUDED.status_analise,
-        sigla = EXCLUDED.sigla
-
-    WHERE EXCLUDED.servidor_id IS NOT NULL
-    """)
-
-    conn.commit()
-    conn.close()
-
-    return "Importação concluída!"
 
 @app.route("/requisicoes", methods=["GET", "POST"])
 def requisicoes():
