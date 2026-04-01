@@ -3768,6 +3768,7 @@ def lancar():
     
                 responsaveis_ids = request.form.getlist("responsaveis[]")
                 os_resumo = next((o["resumo"] for o in oss_db if o["codigo"] == os_codigo), None)
+                data_consul = request.form.get("data_consul") or None
     
                 cur.execute("""
                     INSERT INTO atendimentos (
@@ -3789,7 +3790,7 @@ def lancar():
                     request.form.get("macro"),
                     request.form.get("diretoria"),
                     request.form.get("atividade_atendimento"),
-                    request.form.get("data_consultoria"),
+                    data_consultoria,
                     request.form.get("assunto"),
                     request.form.get("participantes_externos"),
                     ", ".join(request.form.getlist("entidades[]")),
@@ -3807,6 +3808,7 @@ def lancar():
                 tipo = "consultoria" if os_codigo == "1.14/2026" else "treinamento"
                 responsaveis = request.form.getlist("responsaveis2[]")
                 os_resumo = next((o["resumo"] for o in oss if o["codigo"] == os_codigo), None)
+                data_consul = request.form.get("data_consul") or None
     
                 cur.execute("""
                     INSERT INTO consultorias (
@@ -3823,7 +3825,7 @@ def lancar():
                     os_resumo,
                     ", ".join(responsaveis),
                     tipo,
-                    request.form.get("data_consul"),
+                    data_consul,
                     request.form.get("assunto_consultoria"),
                     ", ".join(request.form.getlist("secretarias[]")),
                     request.form.get("meio"),
