@@ -3682,24 +3682,31 @@ def lancar():
     # -------------------------
     if request.method == 'POST':
     
-        item = request.form.get('item')
-        os_codigo = request.form.get('os')
-        atividade = request.form.get('atividade')
-        observacoes = request.form.get('observacoes')
+        oss = request.form.getlist('os[]')
+        itens = request.form.getlist('item[]')
+        atividades = request.form.getlist('atividade[]')
+        datas = request.form.getlist('data[]')
+        duracoes = request.form.getlist('duracao[]')
+        observacoes_list = request.form.getlist('observacoes[]')
         coparticipantes = request.form.getlist("coparticipantes[]")
     
         requisicoes_ids = request.form.getlist("requisicoes[]")
-    
-        datas = request.form.getlist("data[]")
-        duracoes = request.form.getlist("duracao[]")
     
         if not datas:
             con.close()
             return "Nenhum lançamento informado"
     
-        # lista de colaboradores que receberão o lançamento
-        destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
-        for data, duracao in zip(datas, duracoes):
+        for i in range(len(datas)):
+            os_codigo = oss[i]
+            item = itens[i]
+            atividade = atividades[i]
+            data = datas[i]
+            duracao = duracoes[i]
+            observacoes = observacoes_list[i]
+        
+            coparticipantes = request.form.getlist(f"coparticipantes_{i}[]")
+        
+            destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
             if not duracao:
                 continue
             try:
@@ -3909,14 +3916,55 @@ def lancar():
     <h4>Registros de Horas</h4>
 
     <div id="registros">
-        <div class="registro">
-            <input type="date" name="data[]" value="{{ data_padrao }}"
-                   min="2026-01-01" max="2026-12-31" required>
-
-            <input type="text" name="duracao[]" placeholder="HH:MM" required pattern="^\d{1,4}:\d{2}$">
-
+    
+        <div class="registro" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
+    
+            <div>O.S:
+                <select name="os[]">
+                    {% for o in oss %}
+                        <option value="{{ o.codigo }}" data-item="{{ o.item_paint }}">
+                            {{ o.codigo }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+    
+            <div>Item:
+                <input type="text" name="item[]" readonly>
+            </div>
+    
+            <div>Atividade:
+                <select name="atividade[]">
+                    <option>1. Planejamento</option>
+                    <option>2. Execução</option>
+                    <option>3. Relatório</option>
+                </select>
+            </div>
+    
+            <div>Data:
+                <input type="date" name="data[]" required>
+            </div>
+    
+            <div>Duração:
+                <input type="text" name="duracao[]" placeholder="HH:MM" required>
+            </div>
+    
+            <div>Observação:
+                <textarea name="observacoes[]"></textarea>
+            </div>
+    
+            <div>Co-participantes:
+                <select name="coparticipantes_0[]" multiple>
+                    {% for c in colaboradores %}
+                        <option value="{{ c.id }}">{{ c.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+    
             <button type="button" onclick="remover(this)">❌</button>
+    
         </div>
+    
     </div>
 
     <!-- ATENDIMENTO OS 1.15 -->
@@ -4058,7 +4106,7 @@ document.addEventListener("DOMContentLoaded", function () {
     
         // requisições
         if (codigoOS === "1.4/2026" ||
-            codigoOS === "1.1/2026" ||
+            codigoOS === "1.5/2026" ||
             codigoOS === "1.6/2026") {
             boxReq.style.display = "block";
         } else {
@@ -4096,9 +4144,34 @@ document.addEventListener("DOMContentLoaded", function () {
 function adicionar() {
     const base = document.querySelector(".registro");
     const clone = base.cloneNode(true);
-    clone.querySelector("input[name='duracao[]']").value = "";
+
+    const index = document.querySelectorAll(".registro").length;
+
+    clone.querySelectorAll("select, input, textarea").forEach(el => {
+        // limpar valores
+        if (el.tagName === "SELECT") {
+            el.selectedIndex = 0;
+        } else {
+            el.value = "";
+        }
+
+        // corrigir nome dos coparticipantes
+        if (el.name && el.name.includes("coparticipantes_")) {
+            el.name = `coparticipantes_${index}[]`;
+        }
+    });
+
     document.getElementById("registros").appendChild(clone);
 }
+
+document.addEventListener("change", function(e) {
+    if (e.target.name === "os[]") {
+        const registro = e.target.closest(".registro");
+        const itemInput = registro.querySelector("input[name='item[]']");
+        const selected = e.target.selectedOptions[0];
+        itemInput.value = selected ? selected.dataset.item : "";
+    }
+});
 
 function remover(btn) {
     const registros = document.querySelectorAll(".registro");
@@ -4127,6 +4200,10 @@ document.addEventListener("DOMContentLoaded", function () {
         osSelect.dispatchEvent(new Event('change'));
     }
 
+});
+
+document.querySelectorAll("select[name='os[]']").forEach(sel => {
+    sel.dispatchEvent(new Event('change'));
 });
 </script>
 
