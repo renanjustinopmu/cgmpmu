@@ -7585,12 +7585,17 @@ def importar_requisicoes_completa_background(arquivo_bytes):
                 FROM requisicoes_staging_completa
                 ORDER BY
                     chave,
+            
+                    -- 1️⃣ prioridade: quem tem servidor
                     CASE 
                         WHEN servidor_nome IS NOT NULL 
                              AND TRIM(servidor_nome) <> '' 
                         THEN 0 
                         ELSE 1 
-                    END
+                    END,
+            
+                    -- 2️⃣ MAIS RECENTE (AGORA CORRETO)
+                    data_corte DESC
             ) s
             
             ON CONFLICT (chave) DO UPDATE
@@ -7606,9 +7611,9 @@ def importar_requisicoes_completa_background(arquivo_bytes):
                         EXCLUDED.valor_requisicao IS NOT NULL
                         AND requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
                         AND (
-                            requisicoes.data_tramitacao IS NULL
-                            OR EXCLUDED.data_tramitacao IS NULL
-                            OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
+                            COALESCE(EXCLUDED.data_tramitacao, EXCLUDED.data_corte)
+                            >
+                            COALESCE(requisicoes.data_tramitacao, requisicoes.data_corte)
                         )
                     THEN EXCLUDED.valor_requisicao
                     ELSE requisicoes.valor_requisicao
@@ -7620,11 +7625,10 @@ def importar_requisicoes_completa_background(arquivo_bytes):
             
                 -- 📅 DATA (nunca retrocede)
                 data_tramitacao = CASE
-                    WHEN EXCLUDED.data_tramitacao IS NULL
-                        THEN requisicoes.data_tramitacao
-                    WHEN requisicoes.data_tramitacao IS NULL
-                        THEN EXCLUDED.data_tramitacao
-                    ELSE GREATEST(requisicoes.data_tramitacao, EXCLUDED.data_tramitacao)
+                    WHEN COALESCE(EXCLUDED.data_tramitacao, EXCLUDED.data_corte) >
+                         COALESCE(requisicoes.data_tramitacao, requisicoes.data_corte)
+                    THEN COALESCE(EXCLUDED.data_tramitacao, EXCLUDED.data_corte)
+                    ELSE requisicoes.data_tramitacao
                 END,
             
                 natureza_despesa = EXCLUDED.natureza_despesa,
