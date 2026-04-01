@@ -7141,30 +7141,22 @@ def importar_requisicoes_background(arquivo_bytes, data_corte):
             ON CONFLICT (chave) DO UPDATE
             SET
                 valor_requisicao = CASE
-                    -- só atualiza se valor for diferente
-                    WHEN requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
-                         AND (
-                             -- e a nova data_tramitacao for mais recente
-                             EXCLUDED.data_tramitacao IS NOT NULL
-                             AND (
-                                 requisicoes.data_tramitacao IS NULL
-                                 OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
-                             )
-                         )
+                    WHEN (
+                        EXCLUDED.data_tramitacao IS NOT NULL
+                        AND (
+                            requisicoes.data_tramitacao IS NULL
+                            OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
+                        )
+                        AND requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
+                    )
                     THEN EXCLUDED.valor_requisicao
                     ELSE requisicoes.valor_requisicao
                 END,
             
-                data_tramitacao = CASE
-                    -- mantém a mais recente sempre
-                    WHEN EXCLUDED.data_tramitacao IS NOT NULL
-                         AND (
-                             requisicoes.data_tramitacao IS NULL
-                             OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
-                         )
-                    THEN EXCLUDED.data_tramitacao
-                    ELSE requisicoes.data_tramitacao
-                END
+                data_tramitacao = GREATEST(
+                    requisicoes.data_tramitacao,
+                    EXCLUDED.data_tramitacao
+                )
         """)
 
         progresso_import["inseridos"] = cur.rowcount
@@ -7607,23 +7599,22 @@ def importar_requisicoes_completa_background(arquivo_bytes):
                 secretaria = EXCLUDED.secretaria,
                 requisicao_num = EXCLUDED.requisicao_num,
                 tipo_documento = EXCLUDED.tipo_documento,
-                valor_requisicao = CASE
-                    WHEN requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
-                         AND (
-                             requisicoes.data_tramitacao IS NULL
-                             OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
-                         )
+                 valor_requisicao = CASE
+                    WHEN (
+                        requisicoes.data_tramitacao IS NULL
+                        OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
+                    )
+                    AND requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
                     THEN EXCLUDED.valor_requisicao
                     ELSE requisicoes.valor_requisicao
                 END,
                 nome_solicitante = EXCLUDED.nome_solicitante,
                 data_criacao = EXCLUDED.data_criacao,
                 status_atual = EXCLUDED.status_atual,
-                data_tramitacao = CASE
-                    WHEN EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
-                    THEN EXCLUDED.data_tramitacao
-                    ELSE requisicoes.data_tramitacao
-                END,
+                data_tramitacao = GREATEST(
+                    requisicoes.data_tramitacao,
+                    EXCLUDED.data_tramitacao
+                ),
                 natureza_despesa = EXCLUDED.natureza_despesa,
                 item_despesa = EXCLUDED.item_despesa,
                 nome_fornecedor = EXCLUDED.nome_fornecedor,
