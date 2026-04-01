@@ -4047,18 +4047,19 @@ def lancar():
 </form>
 
 <script>
-document.addEventListener("DOMContentLoaded", function () {
 
-    document.addEventListener("change", function(e) {
+// ==========================
+// EVENTOS GLOBAIS
+// ==========================
+document.addEventListener("change", function(e) {
 
     if (e.target.name === "os[]") {
 
         const select = e.target;
         const codigoOS = select.value;
-
-        const selected = select.selectedOptions[0];
         const registro = select.closest(".registro");
 
+        const selected = select.selectedOptions[0];
         const itemInput = registro.querySelector("input[name='item[]']");
         itemInput.value = selected ? selected.dataset.item : "";
 
@@ -4077,33 +4078,38 @@ document.addEventListener("DOMContentLoaded", function () {
         boxAtendimento.style.display =
             (codigoOS === "1.15/2026") ? "block" : "none";
 
-        // CONSULTORIA / TREINAMENTO
+        // CONSULTORIA
         boxConsultoria.style.display =
             (codigoOS === "1.14/2026" || codigoOS === "1.16/2026")
             ? "block" : "none";
     }
 });
 
-    // busca rápida
-    document.querySelectorAll(".busca_req").forEach(input => {
-        input.addEventListener("keyup", function () {
-            const f = this.value.toLowerCase();
-            this.closest(".registro")
-                .querySelectorAll(".req_item")
-                .forEach(e => {
-                    e.style.display = e.innerText.toLowerCase().includes(f) ? "" : "none";
-                });
-        });
-    });
+// ==========================
+// BUSCA REQUISIÇÃO (FUNCIONA EM CLONES)
+// ==========================
+document.addEventListener("keyup", function(e) {
+    if (e.target.classList.contains("busca_req")) {
+        const f = e.target.value.toLowerCase();
+        const registro = e.target.closest(".registro");
 
-// múltiplos registros
+        registro.querySelectorAll(".req_item").forEach(el => {
+            el.style.display = el.innerText.toLowerCase().includes(f) ? "" : "none";
+        });
+    }
+});
+
+// ==========================
+// ADICIONAR REGISTRO
+// ==========================
 function adicionar() {
+
     const base = document.querySelector(".registro");
     const clone = base.cloneNode(true);
 
     const index = document.querySelectorAll(".registro").length;
 
-    // 🔥 COPIAR SELECTS (OS + ATIVIDADE)
+    // COPIAR SELECTS (OS + ATIVIDADE)
     const selectsOriginais = base.querySelectorAll("select");
     const selectsClone = clone.querySelectorAll("select");
 
@@ -4113,7 +4119,7 @@ function adicionar() {
         }
     });
 
-    // 🔥 LIMPAR APENAS CAMPOS QUE PRECISA
+    // LIMPAR CAMPOS
     clone.querySelectorAll("input, textarea").forEach(el => {
 
         if (el.name === "duracao[]") el.value = "";
@@ -4121,7 +4127,7 @@ function adicionar() {
         else if (el.name === "data[]") el.value = new Date().toISOString().split('T')[0];
     });
 
-    // 🔥 ATUALIZAR COPARTICIPANTES
+    // ATUALIZAR NOMES DINÂMICOS
     clone.querySelectorAll("[name]").forEach(el => {
 
         if (el.name.startsWith("coparticipantes_")) {
@@ -4131,16 +4137,20 @@ function adicionar() {
 
         if (el.name.startsWith("requisicoes_")) {
             el.name = `requisicoes_${index}[]`;
+            el.checked = false;
         }
     });
 
-    // 🔥 ATUALIZA ITEM PAINT
+    // ATUALIZAR ITEM PAINT
     const osSelect = clone.querySelector("select[name='os[]']");
     const selected = osSelect.selectedOptions[0];
     const itemInput = clone.querySelector("input[name='item[]']");
     itemInput.value = selected ? selected.dataset.item : "";
 
-    // título
+    // DISPARAR CHANGE PARA MOSTRAR BOXES
+    osSelect.dispatchEvent(new Event('change'));
+
+    // TÍTULO
     const titulo = document.createElement("div");
     titulo.innerHTML = `<b>${index + 1}º Registro</b>`;
     titulo.style.marginBottom = "5px";
@@ -4152,13 +4162,19 @@ function adicionar() {
     document.getElementById("registros").appendChild(clone);
 }
 
+// ==========================
+// REMOVER
+// ==========================
 function remover(btn) {
     const registros = document.querySelectorAll(".registro");
-    if (registros.length > 1) btn.parentElement.remove();
+    if (registros.length > 1) {
+        btn.parentElement.remove();
+    }
 }
-</script>
 
-<script>
+// ==========================
+// MÁSCARA HH:MM
+// ==========================
 document.addEventListener("input", function(e){
     if(e.target.name === "duracao[]"){
         let v = e.target.value.replace(/\D/g, "")
@@ -4171,25 +4187,20 @@ document.addEventListener("input", function(e){
     }
 })
 
-document.addEventListener("DOMContentLoaded", function () {
-
-    const osSelect = document.getElementById("os_select");
-
-    if (osSelect && osSelect.value) {
-        osSelect.dispatchEvent(new Event('change'));
-    }
-
-});
-
+// ==========================
+// INICIALIZAÇÃO
+// ==========================
 window.addEventListener("load", function () {
     document.querySelectorAll("select[name='os[]']").forEach(sel => {
         const registro = sel.closest(".registro");
         const itemInput = registro.querySelector("input[name='item[]']");
         const selected = sel.selectedOptions[0];
         itemInput.value = selected ? selected.dataset.item : "";
+
         sel.dispatchEvent(new Event('change'));
     });
 });
+
 </script>
 
 """
