@@ -7140,23 +7140,36 @@ def importar_requisicoes_background(arquivo_bytes, data_corte):
             FROM requisicoes_staging
             ON CONFLICT (chave) DO UPDATE
             SET
+                -- 💰 VALOR (baseado em data_corte agora)
                 valor_requisicao = CASE
-                    WHEN (
-                        EXCLUDED.data_tramitacao IS NOT NULL
-                        AND (
-                            requisicoes.data_tramitacao IS NULL
-                            OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
-                        )
+                    WHEN
+                        EXCLUDED.valor_requisicao IS NOT NULL
                         AND requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
-                    )
+                        AND (
+                            requisicoes.data_corte IS NULL
+                            OR EXCLUDED.data_corte > requisicoes.data_corte
+                        )
                     THEN EXCLUDED.valor_requisicao
                     ELSE requisicoes.valor_requisicao
                 END,
             
-                data_tramitacao = GREATEST(
-                    requisicoes.data_tramitacao,
-                    EXCLUDED.data_tramitacao
-                )
+                -- 📅 DATA_TRAMITACAO (mantém a mais recente)
+                data_tramitacao = CASE
+                    WHEN EXCLUDED.data_tramitacao IS NULL
+                        THEN requisicoes.data_tramitacao
+                    WHEN requisicoes.data_tramitacao IS NULL
+                        THEN EXCLUDED.data_tramitacao
+                    ELSE GREATEST(requisicoes.data_tramitacao, EXCLUDED.data_tramitacao)
+                END,
+            
+                -- 📅 DATA_CORTE (AGORA É A BASE)
+                data_corte = CASE
+                    WHEN requisicoes.data_corte IS NULL
+                        THEN EXCLUDED.data_corte
+                    WHEN EXCLUDED.data_corte IS NULL
+                        THEN requisicoes.data_corte
+                    ELSE GREATEST(requisicoes.data_corte, EXCLUDED.data_corte)
+                END
         """)
 
         progresso_import["inseridos"] = cur.rowcount
