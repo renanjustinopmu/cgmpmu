@@ -3900,7 +3900,7 @@ def lancar():
                         <option value="{{ o.codigo }}"
                                 data-item="{{ o.item_paint }}"
                                 {% if os_pre == o.codigo %}selected{% endif %}>
-                            {{ o.codigo }}
+                            {{ o.codigo }} - {{ o.resumo }}
                         </option>
                     {% endfor %}
                 </select>
@@ -4050,46 +4050,40 @@ def lancar():
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 
-    const osSelect = document.getElementById("os_select");
-    const itemInput = document.getElementById("item_paint");
+    document.addEventListener("change", function(e) {
 
-    const boxReq = document.getElementById("box_requisicoes");
-    const boxAtendimento = document.getElementById("box_atendimento");
-    const boxConsultoria = document.getElementById("box_consultoria");
-    const boxCoparticipantes = document.getElementById("box_coparticipantes");
+    if (e.target.name === "os[]") {
 
-    osSelect.addEventListener("change", function () {
+        const select = e.target;
+        const codigoOS = select.value;
 
-        const selected = this.selectedOptions[0];
-        const codigoOS = this.value;
+        const selected = select.selectedOptions[0];
+        const registro = select.closest(".registro");
 
+        const itemInput = registro.querySelector("input[name='item[]']");
         itemInput.value = selected ? selected.dataset.item : "";
-    
-        // requisições
-        if (codigoOS === "1.4/2026" ||
-            codigoOS === "1.5/2026" ||
-            codigoOS === "1.6/2026") {
+
+        const boxReq = document.getElementById("box_requisicoes");
+        const boxAtendimento = document.getElementById("box_atendimento");
+        const boxConsultoria = document.getElementById("box_consultoria");
+
+        // REQUISIÇÕES
+        if (["1.4/2026","1.5/2026","1.6/2026"].includes(codigoOS)) {
             boxReq.style.display = "block";
         } else {
             boxReq.style.display = "none";
         }
 
-        // OCULTAR COPARTICIPANTES PARA OS ESPECIAIS
-        if (codigoOS === "1.15/2026" || 
-            codigoOS === "1.14/2026" || 
-            codigoOS === "1.16/2026") {
-        
-            boxCoparticipantes.style.display = "none";
-        
-        } else {
-            boxCoparticipantes.style.display = "block";
-        }
-        
-        // OS específicas
-        boxAtendimento.style.display = (codigoOS === "1.15/2026") ? "block" : "none";
+        // ATENDIMENTO
+        boxAtendimento.style.display =
+            (codigoOS === "1.15/2026") ? "block" : "none";
+
+        // CONSULTORIA / TREINAMENTO
         boxConsultoria.style.display =
-            (codigoOS === "1.14/2026" || codigoOS === "1.16/2026") ? "block" : "none";
-    });
+            (codigoOS === "1.14/2026" || codigoOS === "1.16/2026")
+            ? "block" : "none";
+    }
+});
 
     // busca rápida
     document.getElementById("busca_req").addEventListener("keyup", function () {
@@ -4179,6 +4173,7 @@ window.addEventListener("load", function () {
         const itemInput = registro.querySelector("input[name='item[]']");
         const selected = sel.selectedOptions[0];
         itemInput.value = selected ? selected.dataset.item : "";
+        sel.dispatchEvent(new Event('change'));
     });
 });
 </script>
