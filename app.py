@@ -4173,9 +4173,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
 });
 
-document.addEventListener("DOMContentLoaded", function () {
+window.addEventListener("load", function () {
     document.querySelectorAll("select[name='os[]']").forEach(sel => {
-        sel.dispatchEvent(new Event('change'));
+        const registro = sel.closest(".registro");
+        const itemInput = registro.querySelector("input[name='item[]']");
+        const selected = sel.selectedOptions[0];
+        itemInput.value = selected ? selected.dataset.item : "";
     });
 });
 </script>
