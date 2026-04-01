@@ -3681,14 +3681,13 @@ def lancar():
     # PROCESSAR POST
     # -------------------------
     if request.method == 'POST':
-    
-        oss = request.form.getlist('os[]')
+
+        oss_form = request.form.getlist('os[]')
         itens = request.form.getlist('item[]')
         atividades = request.form.getlist('atividade[]')
         datas = request.form.getlist('data[]')
         duracoes = request.form.getlist('duracao[]')
         observacoes_list = request.form.getlist('observacoes[]')
-        coparticipantes = request.form.getlist("coparticipantes[]")
     
         requisicoes_ids = request.form.getlist("requisicoes[]")
     
@@ -3697,7 +3696,8 @@ def lancar():
             return "Nenhum lançamento informado"
     
         for i in range(len(datas)):
-            os_codigo = oss[i]
+            os_codigo = oss_form[i]
+            oss_db = oss
             item = itens[i]
             atividade = atividades[i]
             data = datas[i]
@@ -3768,7 +3768,7 @@ def lancar():
             if os_codigo == "1.15/2026":
     
                 responsaveis_ids = request.form.getlist("responsaveis[]")
-                os_resumo = next((o["resumo"] for o in oss if o["codigo"] == os_codigo), None)
+                os_resumo = next((o["resumo"] for o in oss_db if o["codigo"] == os_codigo), None)
     
                 cur.execute("""
                     INSERT INTO atendimentos (
@@ -3849,23 +3849,6 @@ def lancar():
 
 <form method="post">
 
-    <div>O.S:
-        <select name="os" id="os_select" required>
-            <option value=""></option>
-            {% for o in oss %}
-                <option value="{{ o.codigo }}"
-                        data-item="{{ o.item_paint }}"
-                        {% if os_pre == o.codigo %}selected{% endif %}>
-                    {{ o.codigo }}{% if o.resumo %} - {{ o.resumo }}{% endif %}
-                </option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <div>Item PAINT:
-        <input type="text" id="item_paint" name="item" readonly>
-    </div>
-
     <!-- REQUISIÇÕES -->
     <div id="box_requisicoes" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
         <h4>Requisições Delegadas</h4>
@@ -3905,24 +3888,18 @@ def lancar():
         </div>
     </div>
 
-    <div>Atividade:
-        <select name="atividade" required>
-            <option>1. Planejamento</option>
-            <option>2. Execução</option>
-            <option>3. Relatório</option>
-        </select>
-    </div>
-
     <h4>Registros de Horas</h4>
-
+    <div><b>1º Registro</b></div>
     <div id="registros">
     
-        <div class="registro" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
+        <div class="registro" style=" background:#f9fbff; border:1px solid #ccc; padding:10px; margin-bottom:10px;">
     
             <div>O.S:
                 <select name="os[]">
                     {% for o in oss %}
-                        <option value="{{ o.codigo }}" data-item="{{ o.item_paint }}">
+                        <option value="{{ o.codigo }}"
+                                data-item="{{ o.item_paint }}"
+                                {% if os_pre == o.codigo %}selected{% endif %}>
                             {{ o.codigo }}
                         </option>
                     {% endfor %}
@@ -3942,7 +3919,7 @@ def lancar():
             </div>
     
             <div>Data:
-                <input type="date" name="data[]" required>
+                <input type="date" name="data[]" value="{{ data_padrao }}" required>
             </div>
     
             <div>Duração:
@@ -4064,22 +4041,6 @@ def lancar():
 
     <button type="button" onclick="adicionar()">➕ Adicionar registro</button>
 
-    <div style="margin-top:10px;">
-        <label>Observação geral:</label>
-        <textarea name="observacoes" rows="4" style="width:100%;"></textarea>
-    </div>
-
-    <div id="box_coparticipantes" style="margin-top:10px;">
-    <label>Co-participantes</label><br>
-    <select name="coparticipantes[]" multiple size="6" style="width:100%;">
-        {% for c in colaboradores %}
-            {% if c.id != session["user_id"] %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
-            {% endif %}
-        {% endfor %}
-    </select>
-</div>
-
     <button class="btn" style="margin-top:15px;">
         Registrar Lançamento(s)
     </button>
@@ -4147,19 +4108,29 @@ function adicionar() {
 
     const index = document.querySelectorAll(".registro").length;
 
-    clone.querySelectorAll("select, input, textarea").forEach(el => {
-        // limpar valores
-        if (el.tagName === "SELECT") {
-            el.selectedIndex = 0;
-        } else {
-            el.value = "";
-        }
+    clone.querySelectorAll("input, textarea, select").forEach(el => {
 
-        // corrigir nome dos coparticipantes
+        // reset específicos
+        if (el.name === "duracao[]") el.value = "";
+        else if (el.name === "observacoes[]") el.value = "";
+        else if (el.name === "data[]") el.value = new Date().toISOString().split('T')[0];
+
+        // limpar coparticipantes
         if (el.name && el.name.includes("coparticipantes_")) {
             el.name = `coparticipantes_${index}[]`;
+            Array.from(el.options).forEach(o => o.selected = false);
         }
     });
+
+    // título do registro
+    const titulo = document.createElement("div");
+    titulo.innerHTML = `<b>${index + 1}º Registro</b>`;
+    titulo.style.marginBottom = "5px";
+
+    clone.prepend(titulo);
+
+    // cor alternada
+    clone.style.background = index % 2 === 0 ? "#f9fbff" : "#eef3fb";
 
     document.getElementById("registros").appendChild(clone);
 }
@@ -4202,8 +4173,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
 });
 
-document.querySelectorAll("select[name='os[]']").forEach(sel => {
-    sel.dispatchEvent(new Event('change'));
+document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("select[name='os[]']").forEach(sel => {
+        sel.dispatchEvent(new Event('change'));
+    });
 });
 </script>
 
@@ -4214,259 +4187,6 @@ document.querySelectorAll("select[name='os[]']").forEach(sel => {
         oss=oss,
         requisicoes=requisicoes,   # ✅ É o que o HTML usa
         os_pre=os_pre,   # <-- aqui
-        colaboradores=colaboradores,
-        data_padrao=data_padrao,
-        user=session['user'],
-        perfil=session['perfil']
-    )
-
-@app.route('/lancar_multiplo', methods=['GET', 'POST'])
-def lancar_multiplo():
-    if 'user' not in session:
-        return redirect('/')
-
-    from datetime import datetime, date
-
-    con = get_db()
-    cur = con.cursor()
-
-    # OS
-    cur.execute("SELECT codigo, item_paint, resumo FROM os ORDER BY codigo")
-    oss = cur.fetchall()
-
-    # Colaboradores
-    cur.execute("SELECT id, nome FROM colaboradores ORDER BY nome")
-    colaboradores = cur.fetchall()
-
-    # -------------------------
-    # POST
-    # -------------------------
-    if request.method == 'POST':
-
-        os_list = request.form.getlist('os[]')
-        itens = request.form.getlist('item[]')
-        datas = request.form.getlist('data[]')
-        duracoes = request.form.getlist('duracao[]')
-        atividades = request.form.getlist('atividade[]')
-        observacoes = request.form.getlist('observacao[]')
-
-        for i in range(len(datas)):
-
-            os_codigo = os_list[i]
-            item = itens[i]
-            data = datas[i]
-            duracao = duracoes[i]
-            atividade = atividades[i]
-            obs = observacoes[i]
-
-            # ✅ COPARTICIPANTES DA LINHA
-            coparticipantes_linha = request.form.getlist(f"coparticipantes[{i}]")
-            destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes_linha]
-
-            if not duracao:
-                continue
-
-            try:
-                h, m = map(int, duracao.split(":"))
-                if m >= 60:
-                    raise ValueError
-            except:
-                continue
-
-            minutos = h * 60 + m
-
-            dt = datetime.strptime(data, "%Y-%m-%d")
-            if dt.year != 2026:
-                con.close()
-                return "Só é permitido lançar horas em 2026"
-
-            duracao_fmt = f"{minutos//60:02d}:{minutos%60:02d}"
-
-            for colab_id in destinatarios:
-
-                if colab_id == session["user_id"]:
-                    obs_final = obs
-                else:
-                    obs_final = f"Lançamento automático da O.S {os_codigo} por {session['user']}"
-                    if obs:
-                        obs_final += f" | {obs}"
-
-                cur.execute("""
-                    INSERT INTO horas
-                    (colaborador_id, data, item_paint, os_codigo,
-                     atividade, hora_inicio, hora_fim,
-                     duracao, duracao_minutos, observacoes)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """, (
-                    colab_id,
-                    data,
-                    item,
-                    os_codigo,
-                    atividade,
-                    None,
-                    None,
-                    duracao_fmt,
-                    minutos,
-                    obs_final
-                ))
-
-        con.commit()
-        con.close()
-        return redirect('/menu')
-
-    # -------------------------
-    # HTML
-    # -------------------------
-    data_padrao = date.today().isoformat()
-    con.close()
-
-    form_html = """
-<h3>Lançamento Múltiplo</h3>
-
-<form method="post">
-
-<div id="registros">
-
-<div class="registro" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
-
-    <div>O.S:
-        <select name="os[]" class="os_select" required>
-            <option value=""></option>
-            {% for o in oss %}
-                <option value="{{ o.codigo }}" data-item="{{ o.item_paint }}">
-                    {{ o.codigo }} - {{ o.resumo }}
-                </option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <div>Item PAINT:
-        <input type="text" name="item[]" class="item_paint" readonly>
-    </div>
-
-    <div>Data:
-        <input type="date" name="data[]" value="{{ data_padrao }}" required>
-    </div>
-
-    <div>Duração:
-        <input type="text" name="duracao[]" placeholder="HH:MM" required>
-    </div>
-
-    <div>Atividade:
-        <select name="atividade[]">
-            <option>1. Planejamento</option>
-            <option>2. Execução</option>
-            <option>3. Relatório</option>
-        </select>
-    </div>
-
-    <!-- ✅ OBSERVAÇÃO EM TEXTAREA -->
-    <div>Observação:
-        <textarea name="observacao[]" rows="3"
-            style="width:100%; border:1px solid #ccc; border-radius:6px; padding:6px;"></textarea>
-    </div>
-
-    <!-- ✅ COPARTICIPANTE POR LINHA -->
-    <div>Co-participantes:
-        <select name="coparticipantes[0]" class="coparticipantes" multiple size="4" style="width:100%;">
-            {% for c in colaboradores %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <button type="button" onclick="duplicar(this)">📄 Duplicar</button>
-    <button type="button" onclick="remover(this)">❌ Remover</button>
-
-</div>
-
-</div>
-
-<button type="button" onclick="adicionar()">➕ Adicionar registro</button>
-
-<button class="btn" style="margin-top:15px;">
-    Salvar Lançamentos
-</button>
-
-</form>
-
-<script>
-
-// Atualiza index dos nomes (ESSENCIAL)
-function atualizarNomes(){
-    document.querySelectorAll(".registro").forEach((reg, i) => {
-        const select = reg.querySelector(".coparticipantes")
-        if(select){
-            select.name = "coparticipantes[" + i + "]"
-        }
-    })
-}
-
-// OS -> item paint
-document.addEventListener("change", function(e){
-    if(e.target.classList.contains("os_select")){
-        const selected = e.target.selectedOptions[0]
-        const item = selected ? selected.dataset.item : ""
-
-        e.target.closest(".registro")
-                .querySelector(".item_paint").value = item
-    }
-})
-
-// adicionar
-function adicionar(){
-    const base = document.querySelector(".registro")
-    const clone = base.cloneNode(true)
-
-    clone.querySelectorAll("input").forEach(i => i.value = "")
-    clone.querySelectorAll("textarea").forEach(t => t.value = "")
-    clone.querySelectorAll("select").forEach(s => s.selectedIndex = -1)
-
-    document.getElementById("registros").appendChild(clone)
-
-    atualizarNomes()
-}
-
-// duplicar (mantém valores)
-function duplicar(btn){
-    const linha = btn.closest(".registro")
-    const clone = linha.cloneNode(true)
-
-    document.getElementById("registros").appendChild(clone)
-
-    atualizarNomes()
-}
-
-// remover
-function remover(btn){
-    const regs = document.querySelectorAll(".registro")
-    if(regs.length > 1){
-        btn.closest(".registro").remove()
-        atualizarNomes()
-    }
-}
-
-// máscara
-document.addEventListener("input", function(e){
-    if(e.target.name === "duracao[]"){
-        let v = e.target.value.replace(/\\D/g, "")
-
-        if(v.length >= 3){
-            e.target.value = v.slice(0, v.length-2) + ":" + v.slice(-2)
-        } else {
-            e.target.value = v
-        }
-    }
-})
-
-document.addEventListener("DOMContentLoaded", atualizarNomes)
-
-</script>
-"""
-
-    return render_template_string(
-        BASE.replace("{% block content %}{% endblock %}", form_html),
-        oss=oss,
         colaboradores=colaboradores,
         data_padrao=data_padrao,
         user=session['user'],
