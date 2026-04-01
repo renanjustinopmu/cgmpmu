@@ -7599,22 +7599,34 @@ def importar_requisicoes_completa_background(arquivo_bytes):
                 secretaria = EXCLUDED.secretaria,
                 requisicao_num = EXCLUDED.requisicao_num,
                 tipo_documento = EXCLUDED.tipo_documento,
-                 valor_requisicao = CASE
-                    WHEN (
-                        requisicoes.data_tramitacao IS NULL
-                        OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
-                    )
-                    AND requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
+            
+                -- 💰 VALOR (regra correta)
+                valor_requisicao = CASE
+                    WHEN
+                        EXCLUDED.valor_requisicao IS NOT NULL
+                        AND requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
+                        AND (
+                            requisicoes.data_tramitacao IS NULL
+                            OR EXCLUDED.data_tramitacao IS NULL
+                            OR EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
+                        )
                     THEN EXCLUDED.valor_requisicao
                     ELSE requisicoes.valor_requisicao
                 END,
+            
                 nome_solicitante = EXCLUDED.nome_solicitante,
                 data_criacao = EXCLUDED.data_criacao,
                 status_atual = EXCLUDED.status_atual,
-                data_tramitacao = GREATEST(
-                    requisicoes.data_tramitacao,
-                    EXCLUDED.data_tramitacao
-                ),
+            
+                -- 📅 DATA (nunca retrocede)
+                data_tramitacao = CASE
+                    WHEN EXCLUDED.data_tramitacao IS NULL
+                        THEN requisicoes.data_tramitacao
+                    WHEN requisicoes.data_tramitacao IS NULL
+                        THEN EXCLUDED.data_tramitacao
+                    ELSE GREATEST(requisicoes.data_tramitacao, EXCLUDED.data_tramitacao)
+                END,
+            
                 natureza_despesa = EXCLUDED.natureza_despesa,
                 item_despesa = EXCLUDED.item_despesa,
                 nome_fornecedor = EXCLUDED.nome_fornecedor,
@@ -7624,21 +7636,30 @@ def importar_requisicoes_completa_background(arquivo_bytes):
                 data_liquidacao = EXCLUDED.data_liquidacao,
                 empenho = EXCLUDED.empenho,
                 ficha_despesa = EXCLUDED.ficha_despesa,
-                tipo = EXCLUDED.tipo,
-                criterio = EXCLUDED.criterio,
-                servidor_id = EXCLUDED.servidor_id,
-                nota = EXCLUDED.nota,
-                num_nota = EXCLUDED.num_nota,
-                oficio = EXCLUDED.oficio,
-                monitoramento = EXCLUDED.monitoramento,
-                monitoramento_resposta = EXCLUDED.monitoramento_resposta,
-                observacoes = EXCLUDED.observacoes,
-                status_analise = EXCLUDED.status_analise,
-                sigla = EXCLUDED.sigla
             
-            WHERE EXCLUDED.servidor_id IS NOT NULL;
-
-        """)
+                -- 🔁 TIPO e CRITÉRIO
+                tipo = COALESCE(EXCLUDED.tipo, requisicoes.tipo),
+                criterio = COALESCE(EXCLUDED.criterio, requisicoes.criterio),
+            
+                -- 🧑‍💼 SERVIDOR (não sobrescreve com NULL)
+                servidor_id = COALESCE(EXCLUDED.servidor_id, requisicoes.servidor_id),
+            
+                nota = COALESCE(EXCLUDED.nota, requisicoes.nota),
+                num_nota = COALESCE(EXCLUDED.num_nota, requisicoes.num_nota),
+                oficio = COALESCE(EXCLUDED.oficio, requisicoes.oficio),
+                monitoramento = COALESCE(EXCLUDED.monitoramento, requisicoes.monitoramento),
+                monitoramento_resposta = COALESCE(EXCLUDED.monitoramento_resposta, requisicoes.monitoramento_resposta),
+                observacoes = COALESCE(EXCLUDED.observacoes, requisicoes.observacoes),
+            
+                status_analise = COALESCE(EXCLUDED.status_analise, requisicoes.status_analise),
+                sigla = COALESCE(EXCLUDED.sigla, requisicoes.sigla)
+            
+            -- ⚠️ IMPORTANTE: não bloqueia update inteiro por causa do servidor
+            WHERE
+                (
+                    EXCLUDED.servidor_id IS NOT NULL
+                    OR requisicoes.servidor_id IS NULL
+                );
 
         progresso_import["inseridos"] = cur.rowcount
         progresso_import["duplicados"] = progresso_import["total"] - cur.rowcount
