@@ -3760,7 +3760,7 @@ def lancar():
             # -------------------------
             if os_codigo == "1.15/2026":
     
-                responsaveis_ids = request.form.getlist("responsaveis[]")
+                responsaveis_ids = request.form.getlist(f"responsaveis_{i}[]")
                 os_resumo = next((o["resumo"] for o in oss if o["codigo"] == os_codigo), None)
     
                 cur.execute("""
@@ -3780,15 +3780,15 @@ def lancar():
                         c["nome"] for c in colaboradores
                         if str(c["id"]) in responsaveis_ids
                     ),
-                    request.form.get("macro"),
-                    request.form.get("diretoria"),
-                    request.form.get("atividade_atendimento"),
-                    request.form.get("data_consultoria"),
-                    request.form.get("assunto"),
-                    request.form.get("participantes_externos"),
-                    ", ".join(request.form.getlist("entidades[]")),
-                    request.form.get("meio_contato"),
-                    request.form.get("observacao_atendimento"),
+                    request.form.get(f"macro_{i}"),
+                    request.form.get(f"diretoria_{i}"),
+                    request.form.get(f"atividade_atendimento_{i}"),
+                    request.form.get(f"data_consultoria_{i}"),
+                    request.form.get(f"assunto_{i}"),
+                    request.form.get(f"participantes_externos_{i}"),
+                    request.form.getlist(f"entidades_{i}[]"),
+                    request.form.get(f"meio_contato_{i}"),
+                    request.form.get(f"observacao_atendimento_{i}"),
                     minutos,
                     data
                 ))
@@ -3799,7 +3799,7 @@ def lancar():
             elif os_codigo in ("1.14/2026", "1.16/2026"):
     
                 tipo = "consultoria" if os_codigo == "1.14/2026" else "treinamento"
-                responsaveis = request.form.getlist("responsaveis2[]")
+                responsaveis = request.form.getlist(f"responsaveis2_{i}[]")
                 os_resumo = next((o["resumo"] for o in oss if o["codigo"] == os_codigo), None)
     
                 cur.execute("""
@@ -3817,13 +3817,13 @@ def lancar():
                     os_resumo,
                     ", ".join(responsaveis),
                     tipo,
-                    request.form.get("data_consul"),
-                    request.form.get("assunto_consultoria"),
-                    ", ".join(request.form.getlist("secretarias[]")),
-                    request.form.get("meio"),
-                    request.form.get("palavras_chave"),
-                    request.form.get("num_oficio"),
-                    request.form.get("observacao"),
+                    request.form.get(f"assunto_consultoria_{i}"),
+                    request.form.get(f"meio_{i}"),
+                    request.form.get(f"num_oficio_{i}"),
+                    request.form.get(f"data_consul_{i}"),
+                    request.form.get(f"palavras_chave_{i}"),
+                    request.form.getlist(f"secretarias_{i}[]"),
+                    request.form.get(f"observacao_{i}"),
                     minutos,
                     data
                 ))
@@ -3924,17 +3924,17 @@ def lancar():
         <h4>Dados do Atendimento (O.S 1.15)</h4>
 
         <label>Responsáveis</label><br>
-        <select name="responsaveis[]" multiple size="5">
+        <select name="responsaveis_0[]" multiple size="5">
             {% for c in colaboradores %}
                 <option value="{{ c.id }}">{{ c.nome }}</option>
             {% endfor %}
         </select>
 
-        <div>Macro: <input name="macro"></div>
-        <div>Diretoria: <input name="diretoria"></div>
+        <div>Macro: <input name="macro_0"></div>
+        <div>Diretoria: <input name="diretoria_0"></div>
 
         <div>Atividade:
-            <select name="atividade_atendimento">
+            <select name="atividade_atendimento_0">
                 <option></option>
                 <option>Consulta</option>
                 <option>Esclarecimento</option>
@@ -3943,15 +3943,15 @@ def lancar():
             </select>
         </div>
 
-        <div>Data: <input type="date" name="data_consultoria"></div>
-        <div>Assunto: <input name="assunto"></div>
+        <div>Data: <input type="date" name="data_consultoria_0"></div>
+        <div>Assunto: <input name="assunto_0"></div>
 
         <div>Participantes Externos:
-            <textarea name="participantes_externos"></textarea>
+            <textarea name="participantes_externos_0"></textarea>
         </div>
 
         <div>Entidades:
-            <select name="entidades[]" multiple size="6">
+            <select name="entidades_0[]" multiple size="6">
                 <option>CM</option><option>SEGOV</option><option>SMGAS</option>
                 <option>PGM</option><option>SMA</option><option>SMF</option>
                 <option>SME</option><option>SMCT</option><option>SMS</option>
@@ -3965,7 +3965,7 @@ def lancar():
         </div>
 
         <div>Meio:
-            <select name="meio_contato">
+            <select name="meio_contato_0">
                 <option></option>
                 <option>Presencial</option>
                 <option>Email</option>
@@ -3974,7 +3974,7 @@ def lancar():
         </div>
 
         <div>Observação:
-            <textarea name="observacao_atendimento"></textarea>
+            <textarea name="observacao_atendimento_0"></textarea>
         </div>
     </div>
 
@@ -3983,20 +3983,20 @@ def lancar():
         <h4>Consultoria / Treinamento</h4>
 
         <label>Responsáveis</label><br>
-        <select name="responsaveis2[]" multiple size="5">
+        <select name="responsaveis2_0[]" multiple size="5">
             {% for c in colaboradores %}
                 <option value="{{ c.id }}">{{ c.nome }}</option>
             {% endfor %}
         </select>
 
-        <div>Assunto: <textarea name="assunto_consultoria"></textarea></div>
-        <div>Meio: <input name="meio"></div>
-        <div>Ofício: <input name="num_oficio"></div>
-        <div>Data: <input type="date" name="data_consul"></div>
-        <div>Palavras-chave: <textarea name="palavras_chave"></textarea></div>
+        <div>Assunto: <textarea name="assunto_consultoria_0"></textarea></div>
+        <div>Meio: <input name="meio_0"></div>
+        <div>Ofício: <input name="num_oficio_0"></div>
+        <div>Data: <input type="date" name="data_consul_0"></div>
+        <div>Palavras-chave: <textarea name="palavras_chave_0"></textarea></div>
 
         <div>Secretarias:
-            <select name="secretarias[]" multiple size="6">
+            <select name="secretarias_0[]" multiple size="6">
                 <option>CM</option><option>SEGOV</option><option>SMGAS</option>
                 <option>PGM</option><option>SMA</option><option>SMF</option>
                 <option>SME</option><option>SMCT</option><option>SMS</option>
@@ -4010,7 +4010,7 @@ def lancar():
         </div>
 
         <div>Observação:
-            <textarea name="observacao"></textarea>
+            <textarea name="observacao_0"></textarea>
         </div>
     </div>
 
@@ -4091,9 +4091,49 @@ document.addEventListener("DOMContentLoaded", function () {
 
 // múltiplos registros
 function adicionar() {
+
     const base = document.querySelector(".registro");
     const clone = base.cloneNode(true);
-    clone.querySelector("input[name='duracao[]']").value = "";
+
+    const index = document.querySelectorAll(".registro").length;
+
+    // limpar inputs básicos
+    clone.querySelectorAll("input").forEach(el => {
+        if (el.name === "duracao[]") el.value = "";
+        if (el.type === "date") el.value = new Date().toISOString().split('T')[0];
+    });
+
+    // -------------------------
+    // 🔥 ATUALIZAR NOMES DINÂMICOS
+    // -------------------------
+    document.querySelectorAll("[id^='box_atendimento'], [id^='box_consultoria']").forEach(box => {
+
+        box.querySelectorAll("[name]").forEach(el => {
+
+            // remove índice antigo (_0, _1...)
+            let baseName = el.name.replace(/_\d+/, "");
+
+            // adiciona novo índice
+            if (baseName.includes("[]")) {
+                baseName = baseName.replace("[]", "");
+                el.name = `${baseName}_${index}[]`;
+            } else {
+                el.name = `${baseName}_${index}`;
+            }
+
+        });
+
+    });
+
+    // -------------------------
+    // título visual
+    // -------------------------
+    const titulo = document.createElement("div");
+    titulo.innerHTML = `<b>${index + 1}º Registro</b>`;
+    titulo.style.marginBottom = "5px";
+
+    clone.prepend(titulo);
+
     document.getElementById("registros").appendChild(clone);
 }
 
