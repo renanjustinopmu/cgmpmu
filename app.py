@@ -4120,8 +4120,8 @@ function adicionar() {
     const selectsOriginais = base.querySelectorAll("select");
     const selectsClone = clone.querySelectorAll("select");
 
-    selectsClone.forEach(sel => {
-        sel.selectedIndex = 0; // volta para opção vazia
+    selectsOriginais.forEach((sel, i) => {
+        selectsClone[i].value = sel.value;
     });
 
     // LIMPAR CAMPOS
