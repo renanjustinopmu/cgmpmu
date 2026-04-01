@@ -3871,7 +3871,7 @@ def lancar():
             </div>
 
             <!-- REQUISIÇÕES -->
-            <div id="box_requisicoes" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
+            <div class="box_requisicoes" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
                 <h4>Requisições Delegadas</h4>
         
                 <input type="text" class="busca_req" placeholder="Pesquisar..."
@@ -4085,14 +4085,16 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
     // busca rápida
-    document.getElementByClass("busca_req").addEventListener("keyup", function () {
-        const f = this.value.toLowerCase();
-        document.querySelectorAll(".req_item").forEach(e => {
-            e.style.display = e.innerText.toLowerCase().includes(f) ? "" : "none";
+    document.querySelectorAll(".busca_req").forEach(input => {
+        input.addEventListener("keyup", function () {
+            const f = this.value.toLowerCase();
+            this.closest(".registro")
+                .querySelectorAll(".req_item")
+                .forEach(e => {
+                    e.style.display = e.innerText.toLowerCase().includes(f) ? "" : "none";
+                });
         });
     });
-
-});
 
 // múltiplos registros
 function adicionar() {
@@ -4101,57 +4103,54 @@ function adicionar() {
 
     const index = document.querySelectorAll(".registro").length;
 
-    clone.querySelectorAll("input, textarea, select").forEach(el => {
+    // 🔥 COPIAR SELECTS (OS + ATIVIDADE)
+    const selectsOriginais = base.querySelectorAll("select");
+    const selectsClone = clone.querySelectorAll("select");
 
-        // reset específicos
+    selectsOriginais.forEach((sel, i) => {
+        for (let j = 0; j < sel.options.length; j++) {
+            selectsClone[i].options[j].selected = sel.options[j].selected;
+        }
+    });
+
+    // 🔥 LIMPAR APENAS CAMPOS QUE PRECISA
+    clone.querySelectorAll("input, textarea").forEach(el => {
+
         if (el.name === "duracao[]") el.value = "";
         else if (el.name === "observacoes[]") el.value = "";
         else if (el.name === "data[]") el.value = new Date().toISOString().split('T')[0];
+    });
 
-        // limpar coparticipantes
-        if (el.name && el.name.includes("coparticipantes_")) {
+    // 🔥 ATUALIZAR COPARTICIPANTES
+    clone.querySelectorAll("[name]").forEach(el => {
+
+        if (el.name.startsWith("coparticipantes_")) {
             el.name = `coparticipantes_${index}[]`;
             Array.from(el.options).forEach(o => o.selected = false);
         }
-    });
 
-        // corrigir nomes dinâmicos
-    clone.querySelectorAll("[name]").forEach(el => {
-    
         if (el.name.startsWith("requisicoes_")) {
             el.name = `requisicoes_${index}[]`;
         }
-    
-        if (el.name === "macro[]") {
-            el.name = `macro_${index}`;
-        }
-    
-        if (el.name === "assunto_consultoria[]") {
-            el.name = `assunto_consultoria_${index}`;
-        }
     });
-        
-    // título do registro
+
+    // 🔥 ATUALIZA ITEM PAINT
+    const osSelect = clone.querySelector("select[name='os[]']");
+    const selected = osSelect.selectedOptions[0];
+    const itemInput = clone.querySelector("input[name='item[]']");
+    itemInput.value = selected ? selected.dataset.item : "";
+
+    // título
     const titulo = document.createElement("div");
     titulo.innerHTML = `<b>${index + 1}º Registro</b>`;
     titulo.style.marginBottom = "5px";
 
     clone.prepend(titulo);
 
-    // cor alternada
     clone.style.background = index % 2 === 0 ? "#f9fbff" : "#eef3fb";
 
     document.getElementById("registros").appendChild(clone);
 }
-
-document.addEventListener("change", function(e) {
-    if (e.target.name === "os[]") {
-        const registro = e.target.closest(".registro");
-        const itemInput = registro.querySelector("input[name='item[]']");
-        const selected = e.target.selectedOptions[0];
-        itemInput.value = selected ? selected.dataset.item : "";
-    }
-});
 
 function remover(btn) {
     const registros = document.querySelectorAll(".registro");
