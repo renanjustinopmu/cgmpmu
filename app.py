@@ -3689,13 +3689,12 @@ def lancar():
         duracoes = request.form.getlist('duracao[]')
         observacoes_list = request.form.getlist('observacoes[]')
     
-        requisicoes_ids = request.form.getlist("requisicoes[]")
-    
         if not datas:
             con.close()
             return "Nenhum lançamento informado"
     
         for i in range(len(datas)):
+            requisicoes_ids = request.form.getlist(f"requisicoes_{i}[]")
             os_codigo = oss_form[i]
             oss_db = oss
             item = itens[i]
@@ -3849,45 +3848,6 @@ def lancar():
 
 <form method="post">
 
-    <!-- REQUISIÇÕES -->
-    <div id="box_requisicoes" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
-        <h4>Requisições Delegadas</h4>
-
-        <input type="text" id="busca_req" placeholder="Pesquisar..."
-               style="width:100%; margin-bottom:6px;">
-
-        <div id="lista_reqs" style="
-            max-height:200px;
-            overflow:auto;
-        ">
-            <style>
-                .req_item:hover {
-                    background:#f0f0f0;
-                }
-                .req_item input:checked + span {
-                    font-weight:bold;
-                }
-            </style>
-            {% for r in requisicoes %}
-                <label class="req_item" style="
-                    display:flex;
-                    align-items:center;
-                    gap:8px;
-                    padding:6px 8px;
-                    cursor:pointer;
-                    border-radius:4px;
-                ">
-                    <input type="checkbox" name="requisicoes[]" value="{{ r.id }}"
-                           style="margin:0;">
-                    <span>
-                        <strong>{{ r.chave }}</strong>
-                        &nbsp;| {{ r.tipo }} | {{ r.criterio }}
-                    </span>
-                </label>
-            {% endfor %}
-        </div>
-    </div>
-
     <h4>Registros de Horas</h4>
     <div><b>1º Registro</b></div>
     <div id="registros">
@@ -3909,7 +3869,46 @@ def lancar():
             <div>Item:
                 <input type="text" name="item[]" readonly>
             </div>
-    
+
+            <!-- REQUISIÇÕES -->
+            <div id="box_requisicoes" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
+                <h4>Requisições Delegadas</h4>
+        
+                <input type="text" class="busca_req" placeholder="Pesquisar..."
+                       style="width:100%; margin-bottom:6px;">
+        
+                <div class="lista_reqs" style="
+                    max-height:200px;
+                    overflow:auto;
+                ">
+                    <style>
+                        .req_item:hover {
+                            background:#f0f0f0;
+                        }
+                        .req_item input:checked + span {
+                            font-weight:bold;
+                        }
+                    </style>
+                    {% for r in requisicoes %}
+                        <label class="req_item" style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                            padding:6px 8px;
+                            cursor:pointer;
+                            border-radius:4px;
+                        ">
+                            <input type="checkbox" name="requisicoes_0[]" value="{{ r.id }}"
+                                   style="margin:0;">
+                            <span>
+                                <strong>{{ r.chave }}</strong>
+                                &nbsp;| {{ r.tipo }} | {{ r.criterio }}
+                            </span>
+                        </label>
+                    {% endfor %}
+                </div>
+            </div>
+            
             <div>Atividade:
                 <select name="atividade[]">
                     <option>1. Planejamento</option>
@@ -3937,106 +3936,106 @@ def lancar():
                     {% endfor %}
                 </select>
             </div>
-    
+
+             <!-- ATENDIMENTO OS 1.15 -->
+            <div class="box_atendimento" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
+                <h4>Dados do Atendimento (O.S 1.15)</h4>
+        
+                <label>Responsáveis</label><br>
+                <select name="responsaveis[]" multiple size="5">
+                    {% for c in colaboradores %}
+                        <option value="{{ c.id }}">{{ c.nome }}</option>
+                    {% endfor %}
+                </select>
+        
+                <div>Macro: <input name="macro"></div>
+                <div>Diretoria: <input name="diretoria"></div>
+        
+                <div>Atividade:
+                    <select name="atividade_atendimento">
+                        <option></option>
+                        <option>Consulta</option>
+                        <option>Esclarecimento</option>
+                        <option>Orientação</option>
+                        <option>Preventiva</option>
+                    </select>
+                </div>
+        
+                <div>Data: <input type="date" name="data_consultoria"></div>
+                <div>Assunto: <input name="assunto"></div>
+        
+                <div>Participantes Externos:
+                    <textarea name="participantes_externos"></textarea>
+                </div>
+        
+                <div>Entidades:
+                    <select name="entidades[]" multiple size="6">
+                        <option>CM</option><option>SEGOV</option><option>SMGAS</option>
+                        <option>PGM</option><option>SMA</option><option>SMF</option>
+                        <option>SME</option><option>SMCT</option><option>SMS</option>
+                        <option>SEDES</option><option>SMAGRO</option><option>SEINFRA</option>
+                        <option>SETTRAN</option><option>DMAE</option><option>FUTEL</option>
+                        <option>EMAM</option><option>FERUB</option><option>IPREMU</option>
+                        <option>SESURB</option><option>SMH</option><option>SEJUV</option>
+                        <option>SECOM</option><option>SEDEI</option><option>SMGE</option>
+                        <option>SSEG</option><option>ARESAN</option>
+                    </select>
+                </div>
+        
+                <div>Meio:
+                    <select name="meio_contato">
+                        <option></option>
+                        <option>Presencial</option>
+                        <option>Email</option>
+                        <option>Telefone</option>
+                    </select>
+                </div>
+        
+                <div>Observação:
+                    <textarea name="observacao_atendimento"></textarea>
+                </div>
+            </div>
+        
+            <!-- CONSULTORIA -->
+            <div class="box_consultoria" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
+                <h4>Consultoria / Treinamento</h4>
+        
+                <label>Responsáveis</label><br>
+                <select name="responsaveis2[]" multiple size="5">
+                    {% for c in colaboradores %}
+                        <option value="{{ c.id }}">{{ c.nome }}</option>
+                    {% endfor %}
+                </select>
+        
+                <div>Assunto: <textarea name="assunto_consultoria"></textarea></div>
+                <div>Meio: <input name="meio"></div>
+                <div>Ofício: <input name="num_oficio"></div>
+                <div>Data: <input type="date" name="data_consul"></div>
+                <div>Palavras-chave: <textarea name="palavras_chave"></textarea></div>
+        
+                <div>Secretarias:
+                    <select name="secretarias[]" multiple size="6">
+                        <option>CM</option><option>SEGOV</option><option>SMGAS</option>
+                        <option>PGM</option><option>SMA</option><option>SMF</option>
+                        <option>SME</option><option>SMCT</option><option>SMS</option>
+                        <option>SEDES</option><option>SMAGRO</option><option>SEINFRA</option>
+                        <option>SETTRAN</option><option>DMAE</option><option>FUTEL</option>
+                        <option>EMAM</option><option>FERUB</option><option>IPREMU</option>
+                        <option>SESURB</option><option>SMH</option><option>SEJUV</option>
+                        <option>SECOM</option><option>SEDEI</option><option>SMGE</option>
+                        <option>SSEG</option><option>ARESAN</option>
+                    </select>
+                </div>
+        
+                <div>Observação:
+                    <textarea name="observacao"></textarea>
+                </div>
+            </div>
+            
             <button type="button" onclick="remover(this)">❌</button>
     
         </div>
     
-    </div>
-
-    <!-- ATENDIMENTO OS 1.15 -->
-    <div id="box_atendimento" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
-        <h4>Dados do Atendimento (O.S 1.15)</h4>
-
-        <label>Responsáveis</label><br>
-        <select name="responsaveis[]" multiple size="5">
-            {% for c in colaboradores %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
-            {% endfor %}
-        </select>
-
-        <div>Macro: <input name="macro"></div>
-        <div>Diretoria: <input name="diretoria"></div>
-
-        <div>Atividade:
-            <select name="atividade_atendimento">
-                <option></option>
-                <option>Consulta</option>
-                <option>Esclarecimento</option>
-                <option>Orientação</option>
-                <option>Preventiva</option>
-            </select>
-        </div>
-
-        <div>Data: <input type="date" name="data_consultoria"></div>
-        <div>Assunto: <input name="assunto"></div>
-
-        <div>Participantes Externos:
-            <textarea name="participantes_externos"></textarea>
-        </div>
-
-        <div>Entidades:
-            <select name="entidades[]" multiple size="6">
-                <option>CM</option><option>SEGOV</option><option>SMGAS</option>
-                <option>PGM</option><option>SMA</option><option>SMF</option>
-                <option>SME</option><option>SMCT</option><option>SMS</option>
-                <option>SEDES</option><option>SMAGRO</option><option>SEINFRA</option>
-                <option>SETTRAN</option><option>DMAE</option><option>FUTEL</option>
-                <option>EMAM</option><option>FERUB</option><option>IPREMU</option>
-                <option>SESURB</option><option>SMH</option><option>SEJUV</option>
-                <option>SECOM</option><option>SEDEI</option><option>SMGE</option>
-                <option>SSEG</option><option>ARESAN</option>
-            </select>
-        </div>
-
-        <div>Meio:
-            <select name="meio_contato">
-                <option></option>
-                <option>Presencial</option>
-                <option>Email</option>
-                <option>Telefone</option>
-            </select>
-        </div>
-
-        <div>Observação:
-            <textarea name="observacao_atendimento"></textarea>
-        </div>
-    </div>
-
-    <!-- CONSULTORIA -->
-    <div id="box_consultoria" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
-        <h4>Consultoria / Treinamento</h4>
-
-        <label>Responsáveis</label><br>
-        <select name="responsaveis2[]" multiple size="5">
-            {% for c in colaboradores %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
-            {% endfor %}
-        </select>
-
-        <div>Assunto: <textarea name="assunto_consultoria"></textarea></div>
-        <div>Meio: <input name="meio"></div>
-        <div>Ofício: <input name="num_oficio"></div>
-        <div>Data: <input type="date" name="data_consul"></div>
-        <div>Palavras-chave: <textarea name="palavras_chave"></textarea></div>
-
-        <div>Secretarias:
-            <select name="secretarias[]" multiple size="6">
-                <option>CM</option><option>SEGOV</option><option>SMGAS</option>
-                <option>PGM</option><option>SMA</option><option>SMF</option>
-                <option>SME</option><option>SMCT</option><option>SMS</option>
-                <option>SEDES</option><option>SMAGRO</option><option>SEINFRA</option>
-                <option>SETTRAN</option><option>DMAE</option><option>FUTEL</option>
-                <option>EMAM</option><option>FERUB</option><option>IPREMU</option>
-                <option>SESURB</option><option>SMH</option><option>SEJUV</option>
-                <option>SECOM</option><option>SEDEI</option><option>SMGE</option>
-                <option>SSEG</option><option>ARESAN</option>
-            </select>
-        </div>
-
-        <div>Observação:
-            <textarea name="observacao"></textarea>
-        </div>
     </div>
 
     <button type="button" onclick="adicionar()">➕ Adicionar registro</button>
@@ -4063,9 +4062,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const itemInput = registro.querySelector("input[name='item[]']");
         itemInput.value = selected ? selected.dataset.item : "";
 
-        const boxReq = document.getElementById("box_requisicoes");
-        const boxAtendimento = document.getElementById("box_atendimento");
-        const boxConsultoria = document.getElementById("box_consultoria");
+        const boxReq = registro.querySelector(".box_requisicoes");
+        const boxAtendimento = registro.querySelector(".box_atendimento");
+        const boxConsultoria = registro.querySelector(".box_consultoria");
 
         // REQUISIÇÕES
         if (["1.4/2026","1.5/2026","1.6/2026"].includes(codigoOS)) {
@@ -4086,7 +4085,7 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
     // busca rápida
-    document.getElementById("busca_req").addEventListener("keyup", function () {
+    document.getElementByClass("busca_req").addEventListener("keyup", function () {
         const f = this.value.toLowerCase();
         document.querySelectorAll(".req_item").forEach(e => {
             e.style.display = e.innerText.toLowerCase().includes(f) ? "" : "none";
@@ -4116,6 +4115,22 @@ function adicionar() {
         }
     });
 
+        // corrigir nomes dinâmicos
+    clone.querySelectorAll("[name]").forEach(el => {
+    
+        if (el.name.startsWith("requisicoes_")) {
+            el.name = `requisicoes_${index}[]`;
+        }
+    
+        if (el.name === "macro[]") {
+            el.name = `macro_${index}`;
+        }
+    
+        if (el.name === "assunto_consultoria[]") {
+            el.name = `assunto_consultoria_${index}`;
+        }
+    });
+        
     // título do registro
     const titulo = document.createElement("div");
     titulo.innerHTML = `<b>${index + 1}º Registro</b>`;
@@ -4769,7 +4784,7 @@ def editar(hid):
 Item:
 <input name="item" id="item_paint" value="{{ primeiro.item_paint }}" readonly>
 
-<div id="box_requisicoes">
+<div class="box_requisicoes" style="display:none;">
   <label>Requisições:</label>
 
   <input type="text" id="filtroReq"
