@@ -4430,29 +4430,29 @@ def relatorios():
     html += "</table>"
 
     if perfil == "admin":
-    html += f"""
-        <div style="margin-top:15px;">
-        
-        <select id="mes_export" style="padding:6px;">
-            <option value="">Selecione o mês...</option>
-    """
-
-    for num, nome in meses.items():
-        selected = "selected" if num == mes_filtro else ""
-        html += f"<option value='{num}' {selected}>{nome}</option>"
-
-    html += """
-        </select>
-
-        <button class="btn" onclick="exportarMes()" style="margin-left:10px;">
-            Exportar mês
-        </button>
-
-        <a class="btn" style="margin-left:10px" href="/export_preventivas">
-            Exportar Preventivas
-        </a>
-    </div>
-    """
+        html += f"""
+            <div style="margin-top:15px;">
+            
+            <select id="mes_export" style="padding:6px;">
+                <option value="">Selecione o mês...</option>
+        """
+    
+        for num, nome in meses.items():
+            selected = "selected" if num == mes_filtro else ""
+            html += f"<option value='{num}' {selected}>{nome}</option>"
+    
+        html += """
+            </select>
+    
+            <button class="btn" onclick="exportarMes()" style="margin-left:10px;">
+                Exportar mês
+            </button>
+    
+            <a class="btn" style="margin-left:10px" href="/export_preventivas">
+                Exportar Preventivas
+            </a>
+        </div>
+        """
 
     # ---------------- SCRIPTS ----------------
     html += """
