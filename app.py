@@ -4021,7 +4021,7 @@ def lancar():
         <textarea name="observacoes" rows="4" style="width:100%;"></textarea>
     </div>
 
-    <div style="margin-top:10px;">
+    <div id="box_coparticipantes" style="margin-top:10px;">
     <label>Co-participantes</label><br>
     <select name="coparticipantes[]" multiple size="6" style="width:100%;">
         {% for c in colaboradores %}
@@ -4068,6 +4068,15 @@ document.addEventListener("DOMContentLoaded", function () {
         boxAtendimento.style.display = (codigoOS === "1.15/2026") ? "block" : "none";
         boxConsultoria.style.display =
             (codigoOS === "1.14/2026" || codigoOS === "1.16/2026") ? "block" : "none";
+            
+        // ✅ NOVO: esconder coparticipantes
+        const boxCop = document.getElementById("box_coparticipantes");
+    
+        if (["1.14/2026", "1.15/2026", "1.16/2026"].includes(codigoOS)) {
+            boxCop.style.display = "none";
+        } else {
+            boxCop.style.display = "block";
+        }
     });
 
     // busca rápida
