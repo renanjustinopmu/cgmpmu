@@ -3681,25 +3681,30 @@ def lancar():
     # PROCESSAR POST
     # -------------------------
     if request.method == 'POST':
-    
-        item = request.form.get('item')
-        os_codigo = request.form.get('os')
-        atividade = request.form.get('atividade')
-        observacoes = request.form.get('observacoes')
-        coparticipantes = request.form.getlist("coparticipantes[]")
-    
-        requisicoes_ids = request.form.getlist("requisicoes[]")
-    
-        datas = request.form.getlist("data[]")
-        duracoes = request.form.getlist("duracao[]")
+
+        oss_form = request.form.getlist('os[]')
+        itens = request.form.getlist('item[]')
+        atividades = request.form.getlist('atividade[]')
+        datas = request.form.getlist('data[]')
+        duracoes = request.form.getlist('duracao[]')
+        observacoes_list = request.form.getlist('observacoes[]')
     
         if not datas:
             con.close()
             return "Nenhum lançamento informado"
     
-        # lista de colaboradores que receberão o lançamento
-        destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
-        for data, duracao in zip(datas, duracoes):
+        for i in range(len(datas)):
+            os_codigo = oss_form[i]
+            oss_db = oss
+            item = itens[i]
+            atividade = atividades[i]
+            data = datas[i]
+            duracao = duracoes[i]
+            observacoes = observacoes_list[i]
+            requisicoes_ids = request.form.getlist(f"requisicoes_{i}[]")
+            coparticipantes = request.form.getlist(f"coparticipantes_{i}[]")
+        
+            destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
             if not duracao:
                 continue
             try:
@@ -3761,7 +3766,7 @@ def lancar():
             if os_codigo == "1.15/2026":
     
                 responsaveis_ids = request.form.getlist("responsaveis[]")
-                os_resumo = next((o["resumo"] for o in oss if o["codigo"] == os_codigo), None)
+                os_resumo = next((o["resumo"] for o in oss_db if o["codigo"] == os_codigo), None)
     
                 cur.execute("""
                     INSERT INTO atendimentos (
@@ -3842,195 +3847,197 @@ def lancar():
 
 <form method="post">
 
-    <div>O.S:
-        <select name="os" id="os_select" required>
-            <option value=""></option>
-            {% for o in oss %}
-                <option value="{{ o.codigo }}"
-                        data-item="{{ o.item_paint }}"
-                        {% if os_pre == o.codigo %}selected{% endif %}>
-                    {{ o.codigo }}{% if o.resumo %} - {{ o.resumo }}{% endif %}
-                </option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <div>Item PAINT:
-        <input type="text" id="item_paint" name="item" readonly>
-    </div>
-
-    <!-- REQUISIÇÕES -->
-    <div id="box_requisicoes" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
-        <h4>Requisições Delegadas</h4>
-
-        <input type="text" id="busca_req" placeholder="Pesquisar..."
-               style="width:100%; margin-bottom:6px;">
-
-        <div id="lista_reqs" style="
-            max-height:200px;
-            overflow:auto;
-        ">
-            <style>
-                .req_item:hover {
-                    background:#f0f0f0;
-                }
-                .req_item input:checked + span {
-                    font-weight:bold;
-                }
-            </style>
-            {% for r in requisicoes %}
-                <label class="req_item" style="
-                    display:flex;
-                    align-items:center;
-                    gap:8px;
-                    padding:6px 8px;
-                    cursor:pointer;
-                    border-radius:4px;
-                ">
-                    <input type="checkbox" name="requisicoes[]" value="{{ r.id }}"
-                           style="margin:0;">
-                    <span>
-                        <strong>{{ r.chave }}</strong>
-                        &nbsp;| {{ r.tipo }} | {{ r.criterio }}
-                    </span>
-                </label>
-            {% endfor %}
-        </div>
-    </div>
-
-    <div>Atividade:
-        <select name="atividade" required>
-            <option>1. Planejamento</option>
-            <option>2. Execução</option>
-            <option>3. Relatório</option>
-        </select>
-    </div>
-
     <h4>Registros de Horas</h4>
-
+    <div><b>1º Registro</b></div>
     <div id="registros">
-        <div class="registro">
-            <input type="date" name="data[]" value="{{ data_padrao }}"
-                   min="2026-01-01" max="2026-12-31" required>
+    
+        <div class="registro" style=" background:#f9fbff; border:1px solid #ccc; padding:10px; margin-bottom:10px;">
+    
+            <div>O.S:
+                <select name="os[]">
+                    {% for o in oss %}
+                        <option value="{{ o.codigo }}"
+                                data-item="{{ o.item_paint }}"
+                                {% if os_pre == o.codigo %}selected{% endif %}>
+                            {{ o.codigo }} - {{ o.resumo }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+    
+            <div>Item:
+                <input type="text" name="item[]" readonly>
+            </div>
 
-            <input type="text" name="duracao[]" placeholder="HH:MM" required pattern="^\d{1,4}:\d{2}$">
+            <!-- REQUISIÇÕES -->
+            <div class="box_requisicoes" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
+                <h4>Requisições Delegadas</h4>
+        
+                <input type="text" class="busca_req" placeholder="Pesquisar..."
+                       style="width:100%; margin-bottom:6px;">
+        
+                <div class="lista_reqs" style="
+                    max-height:200px;
+                    overflow:auto;
+                ">
+                    <style>
+                        .req_item:hover {
+                            background:#f0f0f0;
+                        }
+                        .req_item input:checked + span {
+                            font-weight:bold;
+                        }
+                    </style>
+                    {% for r in requisicoes %}
+                        <label class="req_item" style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                            padding:6px 8px;
+                            cursor:pointer;
+                            border-radius:4px;
+                        ">
+                            <input type="checkbox" name="requisicoes_0[]" value="{{ r.id }}"
+                                   style="margin:0;">
+                            <span>
+                                <strong>{{ r.chave }}</strong>
+                                &nbsp;| {{ r.tipo }} | {{ r.criterio }}
+                            </span>
+                        </label>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div>Atividade:
+                <select name="atividade[]">
+                    <option>1. Planejamento</option>
+                    <option>2. Execução</option>
+                    <option>3. Relatório</option>
+                </select>
+            </div>
+    
+            <div>Data:
+                <input type="date" name="data[]" value="{{ data_padrao }}" required>
+            </div>
+    
+            <div>Duração:
+                <input type="text" name="duracao[]" placeholder="HH:MM" required>
+            </div>
+    
+            <div>Observação:
+                <textarea name="observacoes[]"></textarea>
+            </div>
+    
+            <div>Co-participantes:
+                <select name="coparticipantes_0[]" multiple>
+                    {% for c in colaboradores %}
+                        <option value="{{ c.id }}">{{ c.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
 
+             <!-- ATENDIMENTO OS 1.15 -->
+            <div class="box_atendimento" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
+                <h4>Dados do Atendimento (O.S 1.15)</h4>
+        
+                <label>Responsáveis</label><br>
+                <select name="responsaveis[]" multiple size="5">
+                    {% for c in colaboradores %}
+                        <option value="{{ c.id }}">{{ c.nome }}</option>
+                    {% endfor %}
+                </select>
+        
+                <div>Macro: <input name="macro"></div>
+                <div>Diretoria: <input name="diretoria"></div>
+        
+                <div>Atividade:
+                    <select name="atividade_atendimento">
+                        <option></option>
+                        <option>Consulta</option>
+                        <option>Esclarecimento</option>
+                        <option>Orientação</option>
+                        <option>Preventiva</option>
+                    </select>
+                </div>
+        
+                <div>Data: <input type="date" name="data_consultoria"></div>
+                <div>Assunto: <input name="assunto"></div>
+        
+                <div>Participantes Externos:
+                    <textarea name="participantes_externos"></textarea>
+                </div>
+        
+                <div>Entidades:
+                    <select name="entidades[]" multiple size="6">
+                        <option>CM</option><option>SEGOV</option><option>SMGAS</option>
+                        <option>PGM</option><option>SMA</option><option>SMF</option>
+                        <option>SME</option><option>SMCT</option><option>SMS</option>
+                        <option>SEDES</option><option>SMAGRO</option><option>SEINFRA</option>
+                        <option>SETTRAN</option><option>DMAE</option><option>FUTEL</option>
+                        <option>EMAM</option><option>FERUB</option><option>IPREMU</option>
+                        <option>SESURB</option><option>SMH</option><option>SEJUV</option>
+                        <option>SECOM</option><option>SEDEI</option><option>SMGE</option>
+                        <option>SSEG</option><option>ARESAN</option>
+                    </select>
+                </div>
+        
+                <div>Meio:
+                    <select name="meio_contato">
+                        <option></option>
+                        <option>Presencial</option>
+                        <option>Email</option>
+                        <option>Telefone</option>
+                    </select>
+                </div>
+        
+                <div>Observação:
+                    <textarea name="observacao_atendimento"></textarea>
+                </div>
+            </div>
+        
+            <!-- CONSULTORIA -->
+            <div class="box_consultoria" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
+                <h4>Consultoria / Treinamento</h4>
+        
+                <label>Responsáveis</label><br>
+                <select name="responsaveis2[]" multiple size="5">
+                    {% for c in colaboradores %}
+                        <option value="{{ c.id }}">{{ c.nome }}</option>
+                    {% endfor %}
+                </select>
+        
+                <div>Assunto: <textarea name="assunto_consultoria"></textarea></div>
+                <div>Meio: <input name="meio"></div>
+                <div>Ofício: <input name="num_oficio"></div>
+                <div>Data: <input type="date" name="data_consul"></div>
+                <div>Palavras-chave: <textarea name="palavras_chave"></textarea></div>
+        
+                <div>Secretarias:
+                    <select name="secretarias[]" multiple size="6">
+                        <option>CM</option><option>SEGOV</option><option>SMGAS</option>
+                        <option>PGM</option><option>SMA</option><option>SMF</option>
+                        <option>SME</option><option>SMCT</option><option>SMS</option>
+                        <option>SEDES</option><option>SMAGRO</option><option>SEINFRA</option>
+                        <option>SETTRAN</option><option>DMAE</option><option>FUTEL</option>
+                        <option>EMAM</option><option>FERUB</option><option>IPREMU</option>
+                        <option>SESURB</option><option>SMH</option><option>SEJUV</option>
+                        <option>SECOM</option><option>SEDEI</option><option>SMGE</option>
+                        <option>SSEG</option><option>ARESAN</option>
+                    </select>
+                </div>
+        
+                <div>Observação:
+                    <textarea name="observacao"></textarea>
+                </div>
+            </div>
+            
             <button type="button" onclick="remover(this)">❌</button>
+    
         </div>
-    </div>
-
-    <!-- ATENDIMENTO OS 1.15 -->
-    <div id="box_atendimento" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
-        <h4>Dados do Atendimento (O.S 1.15)</h4>
-
-        <label>Responsáveis</label><br>
-        <select name="responsaveis[]" multiple size="5">
-            {% for c in colaboradores %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
-            {% endfor %}
-        </select>
-
-        <div>Macro: <input name="macro"></div>
-        <div>Diretoria: <input name="diretoria"></div>
-
-        <div>Atividade:
-            <select name="atividade_atendimento">
-                <option></option>
-                <option>Consulta</option>
-                <option>Esclarecimento</option>
-                <option>Orientação</option>
-                <option>Preventiva</option>
-            </select>
-        </div>
-
-        <div>Data: <input type="date" name="data_consultoria"></div>
-        <div>Assunto: <input name="assunto"></div>
-
-        <div>Participantes Externos:
-            <textarea name="participantes_externos"></textarea>
-        </div>
-
-        <div>Entidades:
-            <select name="entidades[]" multiple size="6">
-                <option>CM</option><option>SEGOV</option><option>SMGAS</option>
-                <option>PGM</option><option>SMA</option><option>SMF</option>
-                <option>SME</option><option>SMCT</option><option>SMS</option>
-                <option>SEDES</option><option>SMAGRO</option><option>SEINFRA</option>
-                <option>SETTRAN</option><option>DMAE</option><option>FUTEL</option>
-                <option>EMAM</option><option>FERUB</option><option>IPREMU</option>
-                <option>SESURB</option><option>SMH</option><option>SEJUV</option>
-                <option>SECOM</option><option>SEDEI</option><option>SMGE</option>
-                <option>SSEG</option><option>ARESAN</option>
-            </select>
-        </div>
-
-        <div>Meio:
-            <select name="meio_contato">
-                <option></option>
-                <option>Presencial</option>
-                <option>Email</option>
-                <option>Telefone</option>
-            </select>
-        </div>
-
-        <div>Observação:
-            <textarea name="observacao_atendimento"></textarea>
-        </div>
-    </div>
-
-    <!-- CONSULTORIA -->
-    <div id="box_consultoria" style="display:none; border:1px solid #ccc; padding:10px; margin-top:10px;">
-        <h4>Consultoria / Treinamento</h4>
-
-        <label>Responsáveis</label><br>
-        <select name="responsaveis2[]" multiple size="5">
-            {% for c in colaboradores %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
-            {% endfor %}
-        </select>
-
-        <div>Assunto: <textarea name="assunto_consultoria"></textarea></div>
-        <div>Meio: <input name="meio"></div>
-        <div>Ofício: <input name="num_oficio"></div>
-        <div>Data: <input type="date" name="data_consul"></div>
-        <div>Palavras-chave: <textarea name="palavras_chave"></textarea></div>
-
-        <div>Secretarias:
-            <select name="secretarias[]" multiple size="6">
-                <option>CM</option><option>SEGOV</option><option>SMGAS</option>
-                <option>PGM</option><option>SMA</option><option>SMF</option>
-                <option>SME</option><option>SMCT</option><option>SMS</option>
-                <option>SEDES</option><option>SMAGRO</option><option>SEINFRA</option>
-                <option>SETTRAN</option><option>DMAE</option><option>FUTEL</option>
-                <option>EMAM</option><option>FERUB</option><option>IPREMU</option>
-                <option>SESURB</option><option>SMH</option><option>SEJUV</option>
-                <option>SECOM</option><option>SEDEI</option><option>SMGE</option>
-                <option>SSEG</option><option>ARESAN</option>
-            </select>
-        </div>
-
-        <div>Observação:
-            <textarea name="observacao"></textarea>
-        </div>
+    
     </div>
 
     <button type="button" onclick="adicionar()">➕ Adicionar registro</button>
-
-    <div style="margin-top:10px;">
-        <label>Observação geral:</label>
-        <textarea name="observacoes" rows="4" style="width:100%;"></textarea>
-    </div>
-
-    <div id="box_coparticipantes" style="margin-top:10px;">
-    <label>Co-participantes</label><br>
-    <select name="coparticipantes[]" multiple size="6" style="width:100%;">
-        {% for c in colaboradores %}
-            {% if c.id != session["user_id"] %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
-            {% endif %}
-        {% endfor %}
-    </select>
-</div>
 
     <button class="btn" style="margin-top:15px;">
         Registrar Lançamento(s)
@@ -4041,61 +4048,111 @@ def lancar():
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 
-    const osSelect = document.getElementById("os_select");
-    const itemInput = document.getElementById("item_paint");
+    document.addEventListener("change", function(e) {
 
-    const boxReq = document.getElementById("box_requisicoes");
-    const boxAtendimento = document.getElementById("box_atendimento");
-    const boxConsultoria = document.getElementById("box_consultoria");
+    if (e.target.name === "os[]") {
 
-    osSelect.addEventListener("change", function () {
+        const select = e.target;
+        const codigoOS = select.value;
 
-        const selected = this.selectedOptions[0];
-        const codigoOS = this.value;
+        const selected = select.selectedOptions[0];
+        const registro = select.closest(".registro");
 
+        const itemInput = registro.querySelector("input[name='item[]']");
         itemInput.value = selected ? selected.dataset.item : "";
 
-        // requisições
-        if (codigoOS === "1.4/2026" ||
-            codigoOS === "1.1/2026" ||
-            codigoOS === "1.6/2026") {
+        const boxReq = registro.querySelector(".box_requisicoes");
+        const boxAtendimento = registro.querySelector(".box_atendimento");
+        const boxConsultoria = registro.querySelector(".box_consultoria");
+
+        // REQUISIÇÕES
+        if (["1.4/2026","1.5/2026","1.6/2026"].includes(codigoOS)) {
             boxReq.style.display = "block";
         } else {
             boxReq.style.display = "none";
         }
 
-        // OS específicas
-        boxAtendimento.style.display = (codigoOS === "1.15/2026") ? "block" : "none";
+        // ATENDIMENTO
+        boxAtendimento.style.display =
+            (codigoOS === "1.15/2026") ? "block" : "none";
+
+        // CONSULTORIA / TREINAMENTO
         boxConsultoria.style.display =
-            (codigoOS === "1.14/2026" || codigoOS === "1.16/2026") ? "block" : "none";
-            
-        // ✅ NOVO: esconder coparticipantes
-        const boxCop = document.getElementById("box_coparticipantes");
-    
-        if (["1.14/2026", "1.15/2026", "1.16/2026"].includes(codigoOS)) {
-            boxCop.style.display = "none";
-        } else {
-            boxCop.style.display = "block";
-        }
-    });
+            (codigoOS === "1.14/2026" || codigoOS === "1.16/2026")
+            ? "block" : "none";
+    }
+});
 
     // busca rápida
-    document.getElementById("busca_req").addEventListener("keyup", function () {
-        const f = this.value.toLowerCase();
-        document.querySelectorAll(".req_item").forEach(e => {
-            e.style.display = e.innerText.toLowerCase().includes(f) ? "" : "none";
+    document.querySelectorAll(".busca_req").forEach(input => {
+        input.addEventListener("keyup", function () {
+            const f = this.value.toLowerCase();
+            const registro = this.closest(".registro");
+    
+            registro.querySelectorAll(".req_item").forEach(e => {
+                e.style.display = e.innerText.toLowerCase().includes(f) ? "" : "none";
+            });
         });
     });
-
-});
 
 // múltiplos registros
 function adicionar() {
     const base = document.querySelector(".registro");
     const clone = base.cloneNode(true);
-    clone.querySelector("input[name='duracao[]']").value = "";
+
+    const index = document.querySelectorAll(".registro").length;
+
+    clone.querySelectorAll("input, textarea, select").forEach(el => {
+
+        // reset específicos
+        if (el.name === "duracao[]") el.value = "";
+        else if (el.name === "observacoes[]") el.value = "";
+        else if (el.name === "data[]") el.value = new Date().toISOString().split('T')[0];
+
+        // limpar coparticipantes
+        if (el.name && el.name.includes("coparticipantes_")) {
+            el.name = `coparticipantes_${index}[]`;
+            Array.from(el.options).forEach(o => o.selected = false);
+        }
+    });
+
+        // corrigir nomes dinâmicos
+    clone.querySelectorAll("[name]").forEach(el => {
+    
+        if (el.name.startsWith("requisicoes_")) {
+            el.name = `requisicoes_${index}[]`;
+        }
+    
+        if (el.name === "macro[]") {
+            el.name = `macro_${index}`;
+        }
+    
+        if (el.name === "assunto_consultoria[]") {
+            el.name = `assunto_consultoria_${index}`;
+        }
+    });
+        
+    // título do registro
+    const titulo = document.createElement("div");
+    titulo.innerHTML = `<b>${index + 1}º Registro</b>`;
+    titulo.style.marginBottom = "5px";
+
+    clone.prepend(titulo);
+
+    // cor alternada
+    clone.style.background = index % 2 === 0 ? "#f9fbff" : "#eef3fb";
+
     document.getElementById("registros").appendChild(clone);
 }
+
+document.addEventListener("change", function(e) {
+    if (e.target.name === "os[]") {
+        const registro = e.target.closest(".registro");
+        const itemInput = registro.querySelector("input[name='item[]']");
+        const selected = e.target.selectedOptions[0];
+        itemInput.value = selected ? selected.dataset.item : "";
+    }
+});
 
 function remover(btn) {
     const registros = document.querySelectorAll(".registro");
@@ -4124,6 +4181,16 @@ document.addEventListener("DOMContentLoaded", function () {
         osSelect.dispatchEvent(new Event('change'));
     }
 
+});
+
+window.addEventListener("load", function () {
+    document.querySelectorAll("select[name='os[]']").forEach(sel => {
+        const registro = sel.closest(".registro");
+        const itemInput = registro.querySelector("input[name='item[]']");
+        const selected = sel.selectedOptions[0];
+        itemInput.value = selected ? selected.dataset.item : "";
+        sel.dispatchEvent(new Event('change'));
+    });
 });
 </script>
 
@@ -4706,7 +4773,7 @@ def editar(hid):
 Item:
 <input name="item" id="item_paint" value="{{ primeiro.item_paint }}" readonly>
 
-<div id="box_requisicoes">
+<div class="box_requisicoes" style="display:none;">
   <label>Requisições:</label>
 
   <input type="text" id="filtroReq"
