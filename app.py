@@ -4094,6 +4094,7 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         });
     });
+}); // ← FECHOU AQUI
 
 // múltiplos registros
 function adicionar() {
@@ -4104,55 +4105,60 @@ function adicionar() {
 
     clone.querySelectorAll("input, textarea, select").forEach(el => {
 
-        // reset específicos
-        if (el.name === "duracao[]") el.value = "";
-        else if (el.name === "observacoes[]") el.value = "";
-        else if (el.name === "data[]") el.value = new Date().toISOString().split('T')[0];
+        // limpar textos
+        if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+            el.value = "";
+        }
 
-        // limpar coparticipantes
-        if (el.name && el.name.includes("coparticipantes_")) {
-            el.name = `coparticipantes_${index}[]`;
+        // limpar checkbox 🔥
+        if (el.type === "checkbox") {
+            el.checked = false;
+        }
+
+        // data padrão
+        if (el.name === "data[]") {
+            el.value = new Date().toISOString().split('T')[0];
+        }
+
+        // limpar selects
+        if (el.tagName === "SELECT") {
             Array.from(el.options).forEach(o => o.selected = false);
         }
-    });
 
-        // corrigir nomes dinâmicos
-    clone.querySelectorAll("[name]").forEach(el => {
-    
-        if (el.name.startsWith("requisicoes_")) {
+        // corrigir nomes
+        if (el.name && el.name.includes("coparticipantes_")) {
+            el.name = `coparticipantes_${index}[]`;
+        }
+
+        if (el.name && el.name.includes("requisicoes_")) {
             el.name = `requisicoes_${index}[]`;
         }
-    
-        if (el.name === "macro[]") {
-            el.name = `macro_${index}`;
-        }
-    
-        if (el.name === "assunto_consultoria[]") {
-            el.name = `assunto_consultoria_${index}`;
-        }
     });
-        
-    // título do registro
+
+    // limpar item
+    const itemInput = clone.querySelector("input[name='item[]']");
+    if (itemInput) itemInput.value = "";
+
+    // esconder boxes
+    clone.querySelectorAll(".box_requisicoes, .box_atendimento, .box_consultoria")
+        .forEach(b => b.style.display = "none");
+
+    // título
     const titulo = document.createElement("div");
     titulo.innerHTML = `<b>${index + 1}º Registro</b>`;
     titulo.style.marginBottom = "5px";
-
     clone.prepend(titulo);
 
-    // cor alternada
     clone.style.background = index % 2 === 0 ? "#f9fbff" : "#eef3fb";
 
     document.getElementById("registros").appendChild(clone);
-}
 
-document.addEventListener("change", function(e) {
-    if (e.target.name === "os[]") {
-        const registro = e.target.closest(".registro");
-        const itemInput = registro.querySelector("input[name='item[]']");
-        const selected = e.target.selectedOptions[0];
-        itemInput.value = selected ? selected.dataset.item : "";
+    // força atualização
+    const select = clone.querySelector("select[name='os[]']");
+    if (select) {
+        select.dispatchEvent(new Event('change'));
     }
-});
+}
 
 function remover(btn) {
     const registros = document.querySelectorAll(".registro");
