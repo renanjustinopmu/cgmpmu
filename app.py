@@ -4180,8 +4180,6 @@ document.addEventListener("DOMContentLoaded", function () {
         perfil=session['perfil']
     )
 
-    )
-
 # -------------------------
 # Relatórios
 # -------------------------
