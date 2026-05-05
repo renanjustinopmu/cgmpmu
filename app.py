@@ -710,14 +710,14 @@ tr.analisado { background:#e6ffed; }
 
 
   <meta charset='utf-8'>
-  <title>Sistema de Horas</title>
+  <title>Gestão do PAINT</title>
   <link rel="icon" type="image/png" href="https://i.ibb.co/M5ZcxYj6/favicon.png">
 
 </head>
 <body>
 <header>
   <div>
-    <h2>Sistema de Registro de Horas</h2>
+    <h2>Sistema de Gestão do PAINT</h2>
     {% if user %}
       <div class='small'>Logado como: <strong>{{user}}</strong> ({{perfil}})</div>
     {% endif %}
@@ -7137,7 +7137,11 @@ def importar_requisicoes_background(arquivo_bytes, data_corte):
                 nome_fornecedor, edital, contrato,
                 data_medicao, data_liquidacao, empenho,
                 ficha_despesa, data_corte
-            FROM requisicoes_staging
+            FROM (
+                SELECT DISTINCT ON (chave) *
+                FROM requisicoes_staging
+                ORDER BY chave, data_corte DESC
+            ) s
             ON CONFLICT (chave) DO UPDATE
             SET
                 -- 💰 VALOR (baseado em data_corte agora)
