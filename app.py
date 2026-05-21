@@ -4923,6 +4923,25 @@ def admin_projetos():
         for row in cur.fetchall()
     }
 
+    # =============================
+    # 5) LISTAR OS
+    # =============================
+    cur.execute("SELECT * FROM os ORDER BY codigo")
+    os_rows = cur.fetchall()
+
+    # =============================
+    # MAPA DE OS POR ITEM_PAINT
+    # =============================
+    os_por_item = {}
+    
+    for osr in os_rows:
+        item = osr["item_paint"]
+    
+        if item not in os_por_item:
+            os_por_item[item] = []
+    
+        os_por_item[item].append(osr["codigo"])
+
     paint_data = []
 
     for r in paint_rows:
@@ -4937,9 +4956,11 @@ def admin_projetos():
         if r["hh_atual"] else "0%"
         )
 
+        lista_os = os_por_item.get(r["item_paint"], [])
         paint_data.append({
         "classificacao": r["classificacao"],
         "item_paint": r["item_paint"],
+        "os_list": ", ".join(lista_os),
         "tipo_atividade": r["tipo_atividade"],
         "objeto": r["objeto"],
         "objetivo_geral": r["objetivo_geral"],
@@ -4949,13 +4970,6 @@ def admin_projetos():
         "hh_exec": soma,
         "percentual": percentual_fmt
         })
-
-
-    # =============================
-    # 5) LISTAR OS
-    # =============================
-    cur.execute("SELECT * FROM os ORDER BY codigo")
-    os_rows = cur.fetchall()
     
     os_data = []
     for r in os_rows:
@@ -5086,14 +5100,20 @@ def admin_projetos():
     <input type='text' id='searchPaint' onkeyup="filterTable('searchPaint','paintTable')" placeholder='Pesquisar...'>
     <table id='paintTable'>
         <tr>
-            <th>Classificação</th><th>Item</th><th>Tipo</th><th>Objeto</th><th>Objetivo Geral</th>
+            <th>Classificação</th>
+            <th>Item</th>
+            <th>O.S</th>
+            <th>Tipo</th><th>Objeto</th><th>Objetivo Geral</th>
             <th>Início</th><th>Fim</th><th>HH Atual</th><th>HH Executada</th><th>% Executado</th>
         </tr>
     """
     for r in paint_data:
         html += f"""
         <tr>
-            <td>{r['classificacao']}</td><td>{r['item_paint']}</td><td>{r['tipo_atividade']}</td>
+            <td>{r['classificacao']}</td>
+            <td>{r['item_paint']}</td>
+            <td>{r['os_list']}</td>
+            <td>{r['tipo_atividade']}</td>
             <td>{r['objeto']}</td><td>{r['objetivo_geral']}</td><td>{r['dt_ini']}</td><td>{r['dt_fim']}</td>
             <td>{r['hh_atual']}</td><td>{r['hh_exec']}</td><td>{r['percentual']}</td>
         </tr>
