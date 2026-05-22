@@ -1717,16 +1717,17 @@ def editar_projeto(id):
         dt_ini = request.form.get('dt_ini') or None
         dt_fim = request.form.get('dt_fim') or None
         hh_atual = request.form.get('hh_atual') or 0
+        obs = request.form.get('obs')
 
         try:
             # ---- atualiza projeto ----
             cur.execute("""
                 UPDATE projeto_paint
                 SET classificacao=%s, item_paint=%s, tipo_atividade=%s, objeto=%s,
-                    objetivo_geral=%s, dt_ini=%s, dt_fim=%s, hh_atual=%s
+                    objetivo_geral=%s, dt_ini=%s, dt_fim=%s, hh_atual=%s, obs=%s
                 WHERE id=%s
             """, (classificacao, item_novo, tipo, objeto,
-                  objetivo, dt_ini, dt_fim, hh_atual, id))
+                  objetivo, dt_ini, dt_fim, hh_atual, obs, id))
 
             # ---- CASCADE MANUAL ----
             if item_antigo != item_novo:
@@ -1792,6 +1793,10 @@ def editar_projeto(id):
 
       <div>HH Atual:
         <input type='number' name='hh_atual' value='{projeto["hh_atual"] or 0}'>
+      </div>
+
+      <div>Observações:
+        <textarea name='obs' rows='4'>{projeto["obs"] or ""}</textarea>
       </div>
 
       <button class='btn'>Salvar alterações</button>
@@ -4940,7 +4945,15 @@ def admin_projetos():
         if item not in os_por_item:
             os_por_item[item] = []
     
-        os_por_item[item].append(osr["codigo"])
+        codigo = osr["codigo"] or ""
+        unidade = osr["unidade"] or ""
+    
+        texto = codigo
+    
+        if unidade:
+            texto += f" | {unidade}"
+    
+        os_por_item[item].append(texto)
 
     paint_data = []
 
