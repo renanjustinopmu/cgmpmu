@@ -3177,6 +3177,16 @@ def os_edit(id):
                 id
             ))
 
+            # ---- se OS foi concluída, concluir status de todos usuários ----
+            if status == "Concluido":
+                cur.execute("""
+                    UPDATE os_status_user
+                    SET 
+                        status = 'Concluído',
+                        updated_at = now()
+                    WHERE os_codigo = %s
+                """, (codigo_novo,))
+
             # ---- CASCADE MANUAL ----
             if codigo_antigo != codigo_novo:
                 cur.execute(
