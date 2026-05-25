@@ -4982,7 +4982,7 @@ def admin_projetos():
         "hh_atual": r["hh_atual"],
         "hh_exec": soma,
         "percentual": percentual_fmt,
-        "obs": r["obs"]
+        "obs": r["obs"] or ""
         })
     
     os_data = []
