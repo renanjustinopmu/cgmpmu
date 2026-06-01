@@ -7162,7 +7162,20 @@ def importar_requisicoes_background(arquivo_bytes, data_corte):
         buffer.seek(0)
         cur.copy_from(buffer, "requisicoes_staging", sep="\t", null="")
         buffer.close()
-
+        
+        cur.execute("""
+            UPDATE requisicoes r
+            SET data_corte = s.data_corte
+            FROM (
+                SELECT chave, MAX(data_corte) AS data_corte
+                FROM requisicoes_staging
+                GROUP BY chave
+            ) s
+            WHERE r.chave = s.chave
+              AND r.servidor_id IS NULL
+              AND s.data_corte > r.data_corte;
+        """)
+        
         cur.execute("""
             INSERT INTO requisicoes (
                 chave, requisicao_num, sigla,
@@ -7182,42 +7195,73 @@ def importar_requisicoes_background(arquivo_bytes, data_corte):
                 data_medicao, data_liquidacao, empenho,
                 ficha_despesa, data_corte
             FROM (
-                SELECT DISTINCT ON (chave) *
+                SELECT DISTINCT ON (chave)
+                    chave,
+                    requisicao_num,
+                    sigla,
+                    secretaria,
+                    tipo_documento,
+                    valor_requisicao,
+                    nome_solicitante,
+                    data_criacao,
+                    status_atual,
+                    data_tramitacao,
+                    natureza_despesa,
+                    item_despesa,
+                    nome_fornecedor,
+                    edital,
+                    contrato,
+                    data_medicao,
+                    data_liquidacao,
+                    empenho,
+                    ficha_despesa,
+                    data_corte
                 FROM requisicoes_staging
-                ORDER BY chave, data_corte DESC
+                WHERE chave IS NOT NULL
+                ORDER BY
+                    chave,
+                    data_corte DESC
             ) s
             ON CONFLICT (chave) DO UPDATE
             SET
-                -- 💰 VALOR (baseado em data_corte agora)
-                valor_requisicao = CASE
-                    WHEN
-                        EXCLUDED.valor_requisicao IS NOT NULL
-                        AND requisicoes.valor_requisicao IS DISTINCT FROM EXCLUDED.valor_requisicao
-                        AND (
-                            requisicoes.data_corte IS NULL
-                            OR EXCLUDED.data_corte > requisicoes.data_corte
-                        )
-                    THEN EXCLUDED.valor_requisicao
-                    ELSE requisicoes.valor_requisicao
-                END,
+                requisicao_num   = EXCLUDED.requisicao_num,
+                sigla            = EXCLUDED.sigla,
+                secretaria       = EXCLUDED.secretaria,
+                tipo_documento   = EXCLUDED.tipo_documento,
+                valor_requisicao = EXCLUDED.valor_requisicao,
+                nome_solicitante = EXCLUDED.nome_solicitante,
+                data_criacao     = EXCLUDED.data_criacao,
+                status_atual     = EXCLUDED.status_atual,
+                data_tramitacao  = EXCLUDED.data_tramitacao,
+                natureza_despesa = EXCLUDED.natureza_despesa,
+                item_despesa     = EXCLUDED.item_despesa,
+                nome_fornecedor  = EXCLUDED.nome_fornecedor,
+                edital           = EXCLUDED.edital,
+                contrato         = EXCLUDED.contrato,
+                data_medicao     = EXCLUDED.data_medicao,
+                data_liquidacao  = EXCLUDED.data_liquidacao,
+                empenho          = EXCLUDED.empenho,
+                ficha_despesa    = EXCLUDED.ficha_despesa,
+                data_corte       = EXCLUDED.data_corte
             
-                -- 📅 DATA_TRAMITACAO (mantém a mais recente)
-                data_tramitacao = CASE
-                    WHEN EXCLUDED.data_tramitacao IS NULL
-                        THEN requisicoes.data_tramitacao
-                    WHEN requisicoes.data_tramitacao IS NULL
-                        THEN EXCLUDED.data_tramitacao
-                    ELSE GREATEST(requisicoes.data_tramitacao, EXCLUDED.data_tramitacao)
-                END,
+            WHERE
+                requisicoes.servidor_id IS NULL
             
-                -- 📅 DATA_CORTE (AGORA É A BASE)
-                data_corte = CASE
-                    WHEN requisicoes.data_corte IS NULL
-                        THEN EXCLUDED.data_corte
-                    WHEN EXCLUDED.data_corte IS NULL
-                        THEN requisicoes.data_corte
-                    ELSE GREATEST(requisicoes.data_corte, EXCLUDED.data_corte)
-                END
+                -- só aceita versão mais nova
+                AND EXCLUDED.data_tramitacao > requisicoes.data_tramitacao
+            
+                -- e só atualiza se algo realmente mudou
+                AND (
+                    EXCLUDED.valor_requisicao IS DISTINCT FROM requisicoes.valor_requisicao
+                    OR EXCLUDED.status_atual IS DISTINCT FROM requisicoes.status_atual
+                    OR EXCLUDED.nome_fornecedor IS DISTINCT FROM requisicoes.nome_fornecedor
+                    OR EXCLUDED.edital IS DISTINCT FROM requisicoes.edital
+                    OR EXCLUDED.contrato IS DISTINCT FROM requisicoes.contrato
+                    OR EXCLUDED.empenho IS DISTINCT FROM requisicoes.empenho
+                    OR EXCLUDED.ficha_despesa IS DISTINCT FROM requisicoes.ficha_despesa
+                    OR EXCLUDED.natureza_despesa IS DISTINCT FROM requisicoes.natureza_despesa
+                    OR EXCLUDED.item_despesa IS DISTINCT FROM requisicoes.item_despesa
+                );
         """)
 
         progresso_import["inseridos"] = cur.rowcount
@@ -8798,8 +8842,8 @@ def dashboard():
     cards_notas = cur.fetchone()
 
     perc_beneficio = (
-    (cards_notas["beneficio"] / cards_notas["base_total"]) * 100
-    if cards_notas["base_total"] else 0
+    (cards_notas["beneficio"] / cards["valor_analisado"]) * 100
+    if cards["valor_analisado"]] else 0
 )
 
     # 10 – Gráfico Notas por Sigla
