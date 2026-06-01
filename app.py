@@ -8843,7 +8843,7 @@ def dashboard():
 
     perc_beneficio = (
     (cards_notas["beneficio"] / cards["valor_analisado"]) * 100
-    if cards["valor_analisado"]] else 0
+    if cards["valor_analisado"] else 0
 )
 
     # 10 – Gráfico Notas por Sigla
