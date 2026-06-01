@@ -7220,7 +7220,7 @@ def importar_requisicoes_background(arquivo_bytes, data_corte):
                 WHERE chave IS NOT NULL
                 ORDER BY
                     chave,
-                    data_corte DESC
+                    data_tramitacao DESC NULLS LAST
             ) s
             ON CONFLICT (chave) DO UPDATE
             SET
