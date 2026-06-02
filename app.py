@@ -4877,12 +4877,27 @@ def admin_projetos():
     if session.get("perfil") not in ["admin", "comum"]:
         return redirect("/")
 
-    def icon(v):
-        if v == 1:
-            return "<span style='color:green; font-weight:bold;'>✔</span>"
-        else:
-            return "<span style='color:red; font-weight:bold;'>✖</span>"
-
+    def pct(v):
+        try:
+            v = int(v or 0)
+        except:
+            v = 0
+    
+        if v == 100:
+            return """
+            <span style="
+                color:#15803d;
+                background:#dcfce7;
+                padding:3px 8px;
+                border-radius:8px;
+                font-weight:bold;
+            ">
+                🏁 100%
+            </span>
+            """
+    
+        return f"{v}%"
+        
     conn = get_db()
     cur = conn.cursor()
 
@@ -5007,10 +5022,10 @@ def admin_projetos():
             "equipe": r["equipe"],
             "observacao": r["observacao"],
             "status": r["status"],
-            "plan": r["plan"],
-            "exec": r["exec"],
-            "rp": r["rp"],
-            "rf": r["rf"],
+            "plan0100": r["plan0100"],
+            "exec0100": r["exec0100"],
+            "rp0100": r["rp0100"],
+            "rf0100": r["rf0100"],
     
             # 👇 CAMPOS QUE FALTAVAM
             "dt_inicio": fmt(r["dt_inicio"]),
@@ -5037,10 +5052,142 @@ def admin_projetos():
     <style>
         body, html { margin:0; padding:0; width:100vw; }
         .container, #content { width:100% !important; max-width:100% !important; margin:0 !important; padding:10px 20px !important; }
-        table { width:100% !important; border-collapse: collapse; margin-bottom: 20px; }
-        table th, table td { padding:10px 15px; border:1px solid #ccc; text-align:left; vertical-align:top; }
-        table th { background:#f0f0f0; }
-        input[type="text"] { width:400px; padding:6px 10px; margin-bottom:10px; }
+        table {
+            width:100%;
+            border-collapse:separate;
+            border-spacing:0;
+            overflow:hidden;
+            border-radius:14px;
+            background:white;
+            box-shadow:0 4px 16px rgba(0,0,0,.08);
+        }
+        
+        table th {
+            background:linear-gradient(
+                90deg,
+                #2563eb,
+                #3b82f6
+            );
+            color:white;
+            font-weight:600;
+            padding:12px;
+        }
+        
+        table td {
+            padding:10px;
+            border-bottom:1px solid #e5e7eb;
+        }
+        
+        table tr:hover {
+            background:#eff6ff;
+        }
+        
+        .busca {
+            margin:12px 0 20px 0;
+        }
+        
+        .busca input {
+            width:350px;
+            max-width:100%;
+            padding:10px 14px;
+            border:1px solid #d1d5db;
+            border-radius:10px;
+        }
+
+        .dashboard-card{
+            position:relative;
+            padding:20px;
+            border-radius:16px;
+            text-align:center;
+            flex:1;
+            min-width:180px;
+        
+            box-shadow:
+                0 6px 16px rgba(0,0,0,.08);
+        
+            transition:all .25s ease;
+        }
+        
+        .dashboard-card:hover{
+            transform:translateY(-4px);
+            box-shadow:
+                0 12px 28px rgba(0,0,0,.15);
+        }
+        
+        .dashboard-card::before{
+            content:'';
+            position:absolute;
+            top:0;
+            left:0;
+            right:0;
+            height:5px;
+            border-radius:16px 16px 0 0;
+        }
+        
+        .card-icon{
+            font-size:34px;
+            margin-bottom:8px;
+        }
+        
+        .card-title{
+            font-size:14px;
+            font-weight:600;
+            text-transform:uppercase;
+            letter-spacing:.5px;
+            margin-bottom:8px;
+        }
+        
+        .card-value{
+            font-size:32px;
+            font-weight:700;
+        }
+        
+        .card-sub{
+            margin-top:6px;
+            color:#475569;
+            font-size:12px;
+        }
+        
+        .paint-card{
+            background:linear-gradient(135deg,#dbeafe,#bfdbfe);
+        }
+        
+        .paint-card::before{
+            background:#2563eb;
+        }
+        
+        .os-card{
+            background:linear-gradient(135deg,#dcfce7,#bbf7d0);
+        }
+        
+        .os-card::before{
+            background:#16a34a;
+        }
+        
+        .hh-card{
+            background:linear-gradient(135deg,#e0f2fe,#bae6fd);
+        }
+        
+        .hh-card::before{
+            background:#0284c7;
+        }
+        
+        .exec-card{
+            background:linear-gradient(135deg,#ffedd5,#fed7aa);
+        }
+        
+        .exec-card::before{
+            background:#ea580c;
+        }
+        
+        .gauge-card{
+            background:linear-gradient(135deg,#eef2ff,#dbeafe);
+        }
+        
+        .gauge-card::before{
+            background:#4f46e5;
+        }
+       
     </style>
     <h2>Gerenciar Projetos</h2>
     <div style='display:flex; gap:20px; margin-bottom:18px; flex-wrap:wrap;'>
@@ -5055,73 +5202,121 @@ def admin_projetos():
     dash = (percent / 100.0) * circumference
 
     html += f"""
-    <div style="display:flex; gap:20px; margin-bottom:18px; align-items:stretch; flex-wrap:wrap;">
-
-        <div style='padding:18px; background:#d6e4ff; border-radius:12px;
-                    text-align:center; flex:1; min-width:160px;
-                    border:1px solid #9bbcff; box-shadow:0 2px 6px rgba(0,0,0,0.08);'>
-            <h4 style='margin:6px 0; color:#1e3a8a;'>Total PAINT</h4>
-            <p style='font-size:28px; font-weight:700; margin:6px 0; color:#1e40af;'>{total_paint}</p>
+    <div style="display:flex; gap:20px; margin-bottom:25px; align-items:stretch; flex-wrap:wrap;">
+    
+        <div class="dashboard-card paint-card">
+            <div class="card-icon">📋</div>
+            <div class="card-title">Total PAINT</div>
+            <div class="card-value">{total_paint}</div>
         </div>
-
-        <div style='padding:18px; background:#d1fae5; border-radius:12px;
-                    text-align:center; flex:1; min-width:160px;
-                    border:1px solid #6ee7b7; box-shadow:0 2px 6px rgba(0,0,0,0.08);'>
-            <h4 style='margin:6px 0; color:#065f46;'>Total OS</h4>
-            <p style='font-size:28px; font-weight:700; margin:6px 0; color:#047857;'>{total_os}</p>
+    
+        <div class="dashboard-card os-card">
+            <div class="card-icon">🛠️</div>
+            <div class="card-title">Total OS</div>
+            <div class="card-value">{total_os}</div>
         </div>
-
-        <div style='padding:18px; background:#e0f2fe; border-radius:12px;
-                    text-align:center; flex:1; min-width:200px;
-                    border:1px solid #7dd3fc; box-shadow:0 2px 6px rgba(0,0,0,0.08);'>
-            <h4 style='margin:6px 0; color:#075985;'>Total HH (planejado)</h4>
-            <p style='font-size:22px; font-weight:700; margin:6px 0; color:#0369a1;'>{total_hh_display}</p>
-            <div class='small' style='color:#334155'>soma de hh_atual dos projetos</div>
-        </div>
-
-        <div style='padding:18px; background:#ffedd5; border-radius:12px;
-                    text-align:center; flex:1; min-width:200px;
-                    border:1px solid #fdba74; box-shadow:0 2px 6px rgba(0,0,0,0.08);'>
-            <h4 style='margin:6px 0; color:#9a3412;'>HH Executadas</h4>
-            <p style='font-size:22px; font-weight:700; margin:6px 0; color:#c2410c;'>{total_exec_hhmm}</p>
-            <div class='small' style='color:#4b5563'>total de horas registradas</div>
-        </div>
-
-        <div style='padding:12px; background:#e8f1ff; border-radius:12px;
-                    width:220px; text-align:center; min-width:220px;
-                    border:1px solid #93c5fd; box-shadow:0 2px 6px rgba(0,0,0,0.08);'>
-            <h4 style='margin:6px 0; color:#1e3a8a;'>% Executado</h4>
-
-            <svg width='120' height='120' viewBox='0 0 120 120' style='display:block;margin:auto'>
-              <defs>
-                <linearGradient id='gaugeGrad' x1='0%' y1='0%' x2='100%' y2='0%'>
-                  <stop offset='0%' stop-color='#2563eb'/>
-                  <stop offset='100%' stop-color='#06b6d4'/>
-                </linearGradient>
-              </defs>
-              <g transform='translate(60,60)'>
-                <circle r='44' fill='transparent' stroke='#c7d2fe' stroke-width='16'/>
-                <circle r='38' fill='transparent' stroke='url(#gaugeGrad)' stroke-width='12'
-                        stroke-dasharray='{dash:.2f} {circumference - dash:.2f}'
-                        stroke-linecap='round' transform='rotate(-90)' />
-                <text x='0' y='6' text-anchor='middle' font-size='18' font-weight='700' fill='#1e40af'>
-                    {percent:.2f}%
-                </text>
-              </g>
-            </svg>
-
-            <div class='small' style='color:#334155; margin-top:6px;'>
-                {percentual_global_fmt} do total planejado
+    
+        <div class="dashboard-card hh-card">
+            <div class="card-icon">⏳</div>
+            <div class="card-title">HH Planejado</div>
+            <div class="card-value" style="font-size:26px;">
+                {total_hh_display}
+            </div>
+            <div class="card-sub">
+                soma de hh_atual dos projetos
             </div>
         </div>
-
+    
+        <div class="dashboard-card exec-card">
+            <div class="card-icon">⚡</div>
+            <div class="card-title">HH Executadas</div>
+            <div class="card-value" style="font-size:26px;">
+                {total_exec_hhmm}
+            </div>
+            <div class="card-sub">
+                total registrado
+            </div>
+        </div>
+    
+        <div class="dashboard-card gauge-card"
+             style="width:250px; min-width:250px;">
+    
+            <div class="card-icon">📈</div>
+    
+            <div class="card-title">
+                % Executado
+            </div>
+    
+            <svg width='140'
+                 height='140'
+                 viewBox='0 0 140 140'
+                 style='display:block;margin:auto'>
+    
+                <defs>
+                    <linearGradient id='gaugeGrad'
+                                    x1='0%'
+                                    y1='0%'
+                                    x2='100%'
+                                    y2='0%'>
+    
+                        <stop offset='0%'
+                              stop-color='#2563eb'/>
+    
+                        <stop offset='100%'
+                              stop-color='#06b6d4'/>
+                    </linearGradient>
+                </defs>
+    
+                <g transform='translate(70,70)'>
+    
+                    <circle
+                        r='50'
+                        fill='transparent'
+                        stroke='#c7d2fe'
+                        stroke-width='16'/>
+    
+                    <circle
+                        r='50'
+                        fill='transparent'
+                        stroke='url(#gaugeGrad)'
+                        stroke-width='16'
+                        stroke-dasharray='{(percent/100)*(2*3.1416*50):.2f} {(2*3.1416*50)-((percent/100)*(2*3.1416*50)):.2f}'
+                        stroke-linecap='round'
+                        transform='rotate(-90)' />
+    
+                    <text x='0'
+                          y='8'
+                          text-anchor='middle'
+                          font-size='22'
+                          font-weight='700'
+                          fill='#1e40af'>
+    
+                        {percent:.2f}%
+    
+                    </text>
+    
+                </g>
+    
+            </svg>
+    
+            <div class="card-sub">
+                {percentual_global_fmt} do total planejado
+            </div>
+    
+        </div>
+    
     </div>
     """
 
     # PAINT Table
     html += """
     <h3>Projetos PAINT</h3>
-    <input type='text' id='searchPaint' onkeyup="filterTable('searchPaint','paintTable')" placeholder='Pesquisar...'>
+    <div class="busca">
+    <input type='text'
+           id='searchPaint'
+           onkeyup="filterTable('searchPaint','paintTable')"
+           placeholder='Pesquisar projeto...'>
+    </div>
     <table id='paintTable'>
         <tr>
             <th>Classificação</th>
@@ -5147,7 +5342,7 @@ def admin_projetos():
     # OS Table
     html += """
     <h3>Ordens de Serviço (OS)</h3>
-    <input type='text' id='searchOS' onkeyup="filterTable('searchOS','osTable')" placeholder='Pesquisar...'>
+    <div class="busca"><input type='text' id='searchOS' onkeyup="filterTable('searchOS','osTable')" placeholder='Pesquisar O.S...'></div>
     <table id='osTable'>
         <tr>
             <th>Código</th><th>Item PAINT</th><th>Resumo</th><th>Unidade</th><th>Coordenação</th>
@@ -5160,7 +5355,7 @@ def admin_projetos():
         <tr>
             <td>{r['codigo']}</td><td>{r['item_paint']}</td><td>{r['resumo']}</td><td>{r['unidade']}</td>
             <td>{r['coordenacao']}</td><td>{r['equipe']}</td><td>{r['observacao']}</td><td>{r['status']}</td>
-            <td>{icon(r['plan'])}</td><td>{icon(r['exec'])}</td><td>{icon(r['rp'])}</td><td>{icon(r['rf'])}</td>
+            <td>{pct(r['plan0100'])}</td><td>{pct(r['exec0100'])}</td><td>{pct(r['rp0100'])}</td><td>{pct(r['rf0100'])}</td>
             <td>{r['dt_inicio']}</td><td>{r['dt_fim']}</td><td>{r['prazo']}</td><td>{r['restante']}</td><td>{r['dt_conclusao']}</td>
         </tr>
         """
