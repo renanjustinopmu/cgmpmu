@@ -4896,8 +4896,32 @@ def admin_projetos():
             </span>
             """
     
-        return f"{v}%"
-        
+        elif v >= 50:
+            return f"""
+            <span style="
+                color:#a16207;
+                background:#fef3c7;
+                padding:3px 8px;
+                border-radius:8px;
+                font-weight:bold;
+            ">
+                {v}%
+            </span>
+            """
+    
+        else:
+            return f"""
+            <span style="
+                color:#b91c1c;
+                background:#fee2e2;
+                padding:3px 8px;
+                border-radius:8px;
+                font-weight:bold;
+            ">
+                {v}%
+            </span>
+            """
+            
     conn = get_db()
     cur = conn.cursor()
 
@@ -5096,7 +5120,7 @@ def admin_projetos():
 
         .dashboard-card{
             position:relative;
-            padding:20px;
+            padding:14px 18px;
             border-radius:16px;
             text-align:center;
             flex:1;
@@ -5125,8 +5149,8 @@ def admin_projetos():
         }
         
         .card-icon{
-            font-size:34px;
-            margin-bottom:8px;
+            font-size:28px;
+            margin-bottom:4px;
         }
         
         .card-title{
@@ -5134,11 +5158,11 @@ def admin_projetos():
             font-weight:600;
             text-transform:uppercase;
             letter-spacing:.5px;
-            margin-bottom:8px;
+            margin-bottom:4px;
         }
         
         .card-value{
-            font-size:32px;
+            font-size:28px;
             font-weight:700;
         }
         
