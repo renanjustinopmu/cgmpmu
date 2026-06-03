@@ -5371,7 +5371,7 @@ def admin_projetos():
         <tr>
             <th>Código</th><th>Item PAINT</th><th>Resumo</th><th>Unidade</th><th>Coordenação</th>
             <th>Equipe</th><th>Observação</th><th>Status</th><th>PLAN</th><th>EXEC</th>
-            <th>RP</th><th>RF</th><th>Início</th><th>Fim</th><th>Prazo</th><th>Restante</th><th>Conclusão</th>
+            <th>RP</th><th>RF</th><th>Início</th><th>Fim</th><th>Prazo</th><th>Restante</th><th style="min-width:90px;">Conclusão</th>
         </tr>
     """
     for r in os_data:
@@ -5380,7 +5380,7 @@ def admin_projetos():
             <td>{r['codigo']}</td><td>{r['item_paint']}</td><td>{r['resumo']}</td><td>{r['unidade']}</td>
             <td>{r['coordenacao']}</td><td>{r['equipe']}</td><td>{r['observacao']}</td><td>{r['status']}</td>
             <td>{pct(r['plan0100'])}</td><td>{pct(r['exec0100'])}</td><td>{pct(r['rp0100'])}</td><td>{pct(r['rf0100'])}</td>
-            <td>{r['dt_inicio']}</td><td>{r['dt_fim']}</td><td>{r['prazo']}</td><td>{r['restante']}</td><td>{r['dt_conclusao']}</td>
+            <td>{r['dt_inicio']}</td><td>{r['dt_fim']}</td><td>{r['prazo']}</td><td>{r['restante']}</td><td style="min-width:90px;">{r['dt_conclusao']}</td>
         </tr>
         """
     html += "</table>"
@@ -9696,16 +9696,181 @@ def notas_auditoria():
     # HTML
     # =========================
     html = """
+    <style>
 
+.table-wrap{
+    width:100%;
+    overflow-x:auto;
+    margin-top:10px;
+    border-radius:16px;
+}
+
+.audit-table{
+    width:100%;
+    table-layout:auto;
+    border-collapse:separate;
+    border-spacing:0;
+    background:#fff;
+    border-radius:16px;
+    overflow:hidden;
+    box-shadow:0 6px 18px rgba(0,0,0,.08);
+}
+
+.audit-table th{
+    background:linear-gradient(
+        90deg,
+        #2563eb,
+        #3b82f6
+    );
+    color:white;
+    padding:12px;
+    text-align:left;
+    font-weight:600;
+    font-size:14px;
+    white-space:nowrap;
+    position:sticky;
+    top:0;
+    z-index:1;
+}
+
+.audit-table td{
+    padding:10px;
+    border-bottom:1px solid #e5e7eb;
+    vertical-align:top;
+    background:white;
+}
+
+.audit-table tr:nth-child(even) td{
+    background:#fafafa;
+}
+
+.audit-table tr:hover td{
+    background:#eff6ff;
+}
+
+.audit-input{
+    width:100%;
+    min-width:140px;
+    padding:9px 12px;
+    border:1px solid #d1d5db;
+    border-radius:8px;
+    box-sizing:border-box;
+    transition:.2s;
+}
+
+.audit-select{
+    width:100%;
+    min-width:140px;
+    padding:9px 12px;
+    border:1px solid #d1d5db;
+    border-radius:8px;
+    background:white;
+    box-sizing:border-box;
+    transition:.2s;
+}
+
+.audit-textarea{
+    width:100%;
+    min-width:500px;
+    min-height:90px;
+    resize:vertical;
+    padding:10px 12px;
+    border:1px solid #d1d5db;
+    border-radius:8px;
+    box-sizing:border-box;
+    font-family:inherit;
+    transition:.2s;
+}
+
+.audit-input:focus,
+.audit-select:focus,
+.audit-textarea:focus{
+    outline:none;
+    border-color:#3b82f6;
+    box-shadow:0 0 0 3px rgba(59,130,246,.15);
+}
+
+.btn-save{
+    background:linear-gradient(
+        135deg,
+        #16a34a,
+        #22c55e
+    );
+    color:white;
+    border:none;
+    border-radius:10px;
+    padding:10px 16px;
+    cursor:pointer;
+    font-weight:600;
+    transition:.2s;
+    box-shadow:0 2px 8px rgba(0,0,0,.12);
+}
+
+.btn-save:hover{
+    transform:translateY(-1px);
+    box-shadow:0 6px 16px rgba(0,0,0,.15);
+}
+
+.badge-monitorada{
+    background:#dcfce7;
+    color:#166534;
+    padding:5px 12px;
+    border-radius:999px;
+    font-weight:600;
+}
+
+.busca-auditoria{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    flex-wrap:wrap;
+    margin-bottom:15px;
+}
+
+.busca-auditoria input{
+    width:350px;
+    max-width:100%;
+    padding:10px 14px;
+    border:1px solid #d1d5db;
+    border-radius:10px;
+}
+
+.busca-auditoria select{
+    padding:10px;
+    border:1px solid #d1d5db;
+    border-radius:10px;
+}
+
+.btn-exportar{
+    display:inline-block;
+    margin-bottom:15px;
+    padding:10px 16px;
+    border-radius:10px;
+    text-decoration:none;
+    font-weight:600;
+    color:white;
+    background:linear-gradient(
+        135deg,
+        #059669,
+        #10b981
+    );
+    box-shadow:0 4px 12px rgba(0,0,0,.10);
+}
+
+.btn-exportar:hover{
+    opacity:.92;
+}
+
+</style>
     <h2>Notas de Auditoria</h2>
 
-    <a href="/exportar-notas-auditoria" class="btn btn-success">
+    <a href="/exportar-notas-auditoria" class="btn-exportar">
     Exportar Notas Auditoria
     </a>
 
     <br><br>
 
-    <form method="get">
+    <form method="get" class="busca-auditoria">
         <input type="text" name="busca"
         placeholder="Buscar por nota ou colaborador"
         value="{{request.args.get('busca','')}}">
@@ -9724,7 +9889,8 @@ def notas_auditoria():
 
     <br>
 
-    <table border="1" cellpadding="6">
+    <div class="table-wrap">
+    <table class="audit-table">
 
     <tr>
         <th>Nota</th>
@@ -9734,7 +9900,9 @@ def notas_auditoria():
         <th>Valor Posterior</th>
         <th>Diferença</th>
         <th>Status</th>
-        <th>Observações</th>
+        <th style="min-width:400px;">
+            Observações
+        </th>
         <th>Ação</th>
         <th>Salvar</th>
     </tr>
@@ -9757,8 +9925,10 @@ def notas_auditoria():
         <td>{{fmt_br(n.valor_nota)}}</td>
 
         <td>
-        <input name="valor_posterior"
-        value="{{fmt_br(n.valor_posterior) if n.valor_posterior else ''}}">
+        <input
+            class="audit-input"
+            name="valor_posterior"
+            value="{{fmt_br(n.valor_posterior) if n.valor_posterior else ''}}">
         </td>
         <td>
             {% if n.diferenca is not none %}
@@ -9766,7 +9936,7 @@ def notas_auditoria():
             {% endif %}
         </td>
         <td>
-        <select name="status">
+        <select name="status" class="audit-select">
             <option value=""></option>
             <option value="MONITORADA"
             {% if n.status=="MONITORADA" %}selected{% endif %}>
@@ -9775,9 +9945,11 @@ def notas_auditoria():
         </select>
         </td>
 
-        <td>
-        <input name="observacoes"
-        value="{{n.observacoes or ''}}">
+        <td style="min-width:400px;">
+            <textarea
+                name="observacoes"
+                class="audit-textarea"
+            >{{n.observacoes or ''}}</textarea>
         </td>
 
         <td>
@@ -9786,8 +9958,10 @@ def notas_auditoria():
         </a>
         </td>
 
-        <td>
-        <button>Salvar</button>
+        <td style="text-align:center;">
+            <button class="btn-save">
+                💾 Salvar
+            </button>
         </td>
 
     </tr>
@@ -9797,6 +9971,7 @@ def notas_auditoria():
     {% endfor %}
 
     </table>
+    </div>
 
     <div style="margin-top:10px;">
         {% if page > 1 %}
