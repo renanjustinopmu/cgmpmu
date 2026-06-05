@@ -4072,7 +4072,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // requisições
         if (codigoOS === "1.4/2026" ||
-            codigoOS === "1.1/2026" ||
             codigoOS === "1.6/2026") {
             boxReq.style.display = "block";
         } else {
@@ -9163,8 +9162,77 @@ body { font-family: 'Segoe UI', sans-serif; background:#f4f6fa; padding:20px; }
     padding:18px;
     box-shadow:0 6px 14px rgba(0,0,0,.08);
 }
-.card h4 { margin:0; color:#666; }
-.card strong { font-size:22px; color:#1a3c8b; }
+.cards{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:20px;
+    margin-bottom:20px;
+}
+
+.card{
+    position:relative;
+    overflow:hidden;
+    border-radius:18px;
+    padding:20px;
+    color:white;
+    box-shadow:0 10px 25px rgba(0,0,0,.12);
+    transition:.25s;
+}
+
+.card:hover{
+    transform:translateY(-3px);
+}
+
+.card h4{
+    margin:0;
+    font-size:14px;
+    opacity:.9;
+    font-weight:600;
+}
+
+.card .valor{
+    margin-top:10px;
+    font-size:28px;
+    font-weight:700;
+}
+
+.card .sub{
+    margin-top:8px;
+    font-size:13px;
+    opacity:.95;
+}
+
+.card .icone{
+    position:absolute;
+    top:15px;
+    right:18px;
+    font-size:34px;
+    opacity:.25;
+}
+
+.card-azul{
+    background:linear-gradient(135deg,#2563eb,#1d4ed8);
+}
+
+.card-verde{
+    background:linear-gradient(135deg,#16a34a,#15803d);
+}
+
+.card-roxo{
+    background:linear-gradient(135deg,#7c3aed,#6d28d9);
+}
+
+.card-laranja{
+    background:linear-gradient(135deg,#ea580c,#c2410c);
+}
+
+.card-vermelho{
+    background:linear-gradient(135deg,#dc2626,#b91c1c);
+}
+
+.card-ciano{
+    background:linear-gradient(135deg,#0891b2,#0e7490);
+}
 
 table {
     width:100%;
@@ -9180,6 +9248,26 @@ tfoot td { font-weight:bold; background:#eef2ff; }
 canvas { background:white; border-radius:12px;
          box-shadow:0 6px 14px rgba(0,0,0,.08); }
 .grid { display:grid; grid-template-columns:1fr 1fr; gap:25px; margin-top:25px; }
+progress{
+    width:100%;
+    height:16px;
+    border:none;
+    border-radius:10px;
+    overflow:hidden;
+}
+
+progress::-webkit-progress-bar{
+    background:#dbeafe;
+    border-radius:10px;
+}
+
+progress.vermelho::-webkit-progress-value{
+    background:#dc2626;
+}
+
+progress.verde::-webkit-progress-value{
+    background:#16a34a;
+}
 </style>
 </head>
 
@@ -9188,52 +9276,121 @@ canvas { background:white; border-radius:12px;
 <h2>📊 Dashboard de Requisições</h2>
 
 <div class="cards">
-    <div class="card"><h4>Qtd Universo</h4><strong>{{ cards.qtd_universo }}</strong></div>
-    <div class="card"><h4>Qtd Analisadas</h4><strong>{{ cards.qtd_analisadas }}</strong></div>
-    <div class="card"><h4>Valor Universo</h4><strong>R$ {{ fmt_br(cards.valor_universo) }}</strong></div>
-    <div class="card"><h4>Valor Analisado</h4><strong>R$ {{ fmt_br(cards.valor_analisado) }}</strong></div>
-</div>
-<br>
-<div class="cards">
-    <div class="card">
-        <h4>Qtd Notas</h4>
-        <strong>{{ cards_notas.qtd_notas }}</strong>
-    </div>
 
-    <div class="card">
-        <h4>Valor Notas</h4>
-        <strong>R$ {{ fmt_br(cards_notas.valor_notas) }}</strong>
-    </div>
-
-    <div class="card">
-        <h4>Requisições com Nota</h4>
-
-        <div style="margin-top:8px;">
-            <div>
-                <span style="color:#666;">Qtd:</span><br>
-                <strong>
-                    {{ card_req_nota.qtd_req_nota }}
-                    ({{ perc_qtd_req_nota|round(2) }}%)
-                </strong>
-            </div>
-
-            <div style="margin-top:10px;">
-                <span style="color:#666;">Valor:</span><br>
-                <strong>
-                    R$ {{ fmt_br(card_req_nota.valor_req_nota) }}
-                    ({{ perc_valor_req_nota|round(2) }}%)
-                </strong>
-            </div>
+    <div class="card card-verde">
+        <div class="icone">🌎</div>
+        <h4>Universo</h4>
+        <div class="valor">{{ cards.qtd_universo }}</div>
+        <div class="sub">
+            R$ {{ fmt_br(cards.valor_universo) }}
         </div>
     </div>
 
-    <div class="card">
-        <h4>Benefício Financeiro</h4>
-        <strong>
-            R$ {{ fmt_br(cards_notas.beneficio) }}
-            ({{ perc_beneficio|round(2) }}%)
-        </strong>
+    <div class="card card-azul">
+        <div class="icone">✅</div>
+        <h4>Analisadas</h4>
+        <div class="valor">{{ cards.qtd_analisadas }}</div>
+        <div class="sub">
+            {{ total.perc_qtd }}% do universo
+        </div>
     </div>
+
+    <div class="card card-verde">
+        <div class="icone">💰</div>
+        <h4>Valor Universo</h4>
+        <div class="valor">
+            R$ {{ fmt_br(cards.valor_universo) }}
+        </div>
+    </div>
+
+    <div class="card card-azul">
+        <div class="icone">📊</div>
+        <h4>Valor Analisado</h4>
+        <div class="valor">
+            R$ {{ fmt_br(cards.valor_analisado) }}
+        </div>
+        <div class="sub">
+            {{ total.perc_valor }}% do valor total
+        </div>
+    </div>
+
+</div>
+<div class="cards">
+
+    <div class="card card-laranja">
+        <div class="icone">📝</div>
+
+        <h4>Notas Emitidas</h4>
+
+        <div class="valor">
+            {{ cards_notas.qtd_notas }}
+        </div>
+
+        <div class="sub">
+            R$ {{ fmt_br(cards_notas.valor_notas) }}
+        </div>
+    </div>
+
+
+    <div class="card card-laranja">
+        <div class="icone">📂</div>
+
+        <h4>Requisições com Nota</h4>
+
+        <div class="valor">
+            {{ card_req_nota.qtd_req_nota }}
+        </div>
+
+        <div class="sub">
+            {{ perc_qtd_req_nota|round(2) }}% das analisadas
+        </div>
+
+        <div class="sub">
+            R$ {{ fmt_br(card_req_nota.valor_req_nota) }}
+            ({{ perc_valor_req_nota|round(2) }}%)
+        </div>
+    </div>
+
+
+    <div class="card card-ciano">
+        <div class="icone">💵</div>
+
+        <h4>Benefício Financeiro</h4>
+
+        <div class="valor">
+            R$ {{ fmt_br(cards_notas.beneficio) }}
+        </div>
+
+        <div class="sub">
+            {{ perc_beneficio|round(2) }}% do valor analisado
+        </div>
+    </div>
+
+
+    <div class="card card-ciano">
+        <div class="icone">🎯</div>
+
+        <h4>Meta Financeira</h4>
+
+    <div class="valor"
+         style="color:{% if perc_beneficio >= 5 %}#dcfce7{% else %}#fecaca{% endif %};">
+        {{ perc_beneficio|round(2) }}%
+    </div>
+
+        <div class="sub">
+            Meta: 5%
+        </div>
+
+        <div style="margin-top:10px;">
+    <progress
+        class="{{ 'verde' if perc_beneficio >= 5 else 'vermelho' }}"
+        value="{{ perc_beneficio }}"
+        max="5">
+    </progress>
+            </progress>
+        </div>
+    </div>
+
 </div>
 
 <h3>📋 Comparativo por Sigla</h3>
