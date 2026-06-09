@@ -798,7 +798,8 @@ tr.analisado { background:#e6ffed; }
         <button class="menu-btn menu6">📈 Painel</button>
         <div class="dropdown">
         <a href="/admin_projetos">📂 Projetos</a>
-        <a href="/painel_requisicoes">📊 Painel</a>
+        <a href="/painel_requisicoes">📊 Painel Reqs. Prev.</a>
+        <a href="/painel_audit">🔎 Painel Audit. 2026</a>
         
         {% if perfil == 'admin' %}
         <a href="/visao">📉 Visão/h</a>
@@ -10391,6 +10392,1777 @@ def exportar_notas_auditoria():
             "Content-Disposition":
             "attachment; filename=notas_auditoria.csv"
         }
+    )
+
+@app.route("/painel_audit")
+def painel_audit():
+
+    if "user" not in session:
+        return redirect("/")
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # =====================================================
+    # PROJETOS PAINT
+    # =====================================================
+
+    cur.execute("""
+        SELECT COUNT(*) AS total
+        FROM projeto_paint
+    """)
+    total_paint = cur.fetchone()["total"] or 0
+
+    cur.execute("""
+        SELECT SUM(COALESCE(hh_atual,0)) AS total_hh
+        FROM projeto_paint
+    """)
+    total_hh = cur.fetchone()["total_hh"] or 0
+
+    cur.execute("""
+        SELECT
+            p.*,
+    
+            COALESCE(h.minutos_exec,0) AS minutos_exec,
+    
+            ROUND(
+                COALESCE(h.minutos_exec,0) / 60.0,
+                2
+            ) AS hh_exec,
+    
+            CASE
+                WHEN COALESCE(p.hh_atual,0) > 0
+                THEN ROUND(
+                    (
+                        COALESCE(h.minutos_exec,0) / 60.0
+                    ) / p.hh_atual * 100,
+                    2
+                )
+                ELSE 0
+            END AS percentual
+    
+        FROM projeto_paint p
+    
+        LEFT JOIN (
+    
+            SELECT
+                item_paint,
+                SUM(duracao_minutos) AS minutos_exec
+    
+            FROM horas
+    
+            WHERE item_paint IS NOT NULL
+    
+            GROUP BY item_paint
+    
+        ) h
+            ON h.item_paint = p.item_paint
+    
+        ORDER BY p.item_paint
+    """)
+    
+    projetos = cur.fetchall()
+    
+    # =====================================================
+    # HORAS EXECUTADAS
+    # =====================================================
+
+    cur.execute("""
+        SELECT SUM(COALESCE(duracao_minutos,0)) AS minutos
+        FROM horas
+    """)
+    total_exec_min = cur.fetchone()["minutos"] or 0
+
+    exec_hh = total_exec_min // 60
+    exec_mm = total_exec_min % 60
+
+    total_exec_hhmm = f"{int(exec_hh):02d}:{int(exec_mm):02d}"
+
+    total_hh_min = int(total_hh) * 60
+
+    percentual_global = (
+        (total_exec_min / total_hh_min) * 100
+        if total_hh_min > 0 else 0
+    )
+
+    # =====================================================
+    # HORAS POR PROJETO
+    # =====================================================
+
+    cur.execute("""
+        SELECT
+            item_paint,
+            SUM(duracao_minutos) AS minutos,
+        
+            FLOOR(
+                SUM(duracao_minutos)/60
+            )::int AS horas,
+        
+            MOD(
+                SUM(duracao_minutos),
+                60
+            )::int AS minutos_restantes
+        
+        FROM horas
+        WHERE item_paint IS NOT NULL
+        GROUP BY item_paint
+        ORDER BY minutos DESC
+    """)
+    graf_horas_projeto = cur.fetchall()
+
+    # =====================================================
+    # HORAS POR ATIVIDADE
+    # =====================================================
+
+    cur.execute("""
+        SELECT
+            atividade,
+            SUM(duracao_minutos) AS minutos
+        FROM horas
+        WHERE atividade IS NOT NULL
+        GROUP BY atividade
+        ORDER BY minutos DESC
+    """)
+    graf_horas_atividade = cur.fetchall()
+
+    # =====================================================
+    # TOTAL OS
+    # =====================================================
+
+    cur.execute("""
+        SELECT COUNT(*) AS total
+        FROM os
+    """)
+    total_os = cur.fetchone()["total"] or 0
+
+    # =====================================================
+    # PIPELINE OS
+    # =====================================================
+
+    cur.execute("""
+        SELECT COUNT(*) AS qtd
+        FROM os
+        WHERE COALESCE(plan0100,0)=100
+    """)
+    os_plan = cur.fetchone()["qtd"] or 0
+
+    cur.execute("""
+        SELECT COUNT(*) AS qtd
+        FROM os
+        WHERE COALESCE(exec0100,0)=100
+    """)
+    os_exec = cur.fetchone()["qtd"] or 0
+
+    cur.execute("""
+        SELECT COUNT(*) AS qtd
+        FROM os
+        WHERE COALESCE(rp0100,0)=100
+    """)
+    os_rp = cur.fetchone()["qtd"] or 0
+
+    cur.execute("""
+        SELECT COUNT(*) AS qtd
+        FROM os
+        WHERE COALESCE(rf0100,0)=100
+    """)
+    os_rf = cur.fetchone()["qtd"] or 0
+
+    # =====================================================
+    # CONSULTORIAS
+    # =====================================================
+
+    cur.execute("""
+        SELECT COUNT(*) AS total
+        FROM consultorias
+    """)
+    total_consultorias = cur.fetchone()["total"] or 0
+
+    cur.execute("""
+        SELECT
+            SUM(COALESCE(duracao_minutos,0)) AS minutos
+        FROM consultorias
+    """)
+    min_consultorias = cur.fetchone()["minutos"] or 0
+
+    hh_cons = min_consultorias // 60
+    mm_cons = min_consultorias % 60
+
+    hhmm_consultorias = f"{hh_cons:02d}:{mm_cons:02d}"
+
+    # =====================================================
+    # ATENDIMENTOS
+    # =====================================================
+
+    cur.execute("""
+        SELECT COUNT(*) AS total
+        FROM atendimentos
+    """)
+    total_atendimentos = cur.fetchone()["total"] or 0
+
+    cur.execute("""
+        SELECT
+            SUM(COALESCE(duracao_minutos,0)) AS minutos
+        FROM atendimentos
+    """)
+    min_atendimentos = cur.fetchone()["minutos"] or 0
+
+    hh_at = min_atendimentos // 60
+    mm_at = min_atendimentos % 60
+
+    hhmm_atendimentos = f"{hh_at:02d}:{mm_at:02d}"
+
+    # =====================================================
+    # SECRETARIAS ATENDIDAS
+    # =====================================================
+
+    cur.execute("""
+    WITH dados AS (
+    
+        SELECT
+            trim(
+                regexp_split_to_table(
+                    COALESCE(secretarias,''),
+                    ','
+                )
+            ) AS secretaria,
+    
+            COALESCE(duracao_minutos,0) AS minutos
+    
+        FROM consultorias
+    
+        UNION ALL
+    
+        SELECT
+            trim(
+                regexp_split_to_table(
+                    COALESCE(entidades,''),
+                    ','
+                )
+            ) AS secretaria,
+    
+            COALESCE(duracao_minutos,0) AS minutos
+    
+        FROM atendimentos
+    )
+    
+    SELECT
+        secretaria,
+    
+        SUM(minutos)::int AS minutos,
+    
+        COUNT(*)::int AS qtd
+    
+    FROM dados
+    
+    WHERE secretaria IS NOT NULL
+      AND secretaria <> ''
+    
+    GROUP BY secretaria
+    
+    ORDER BY minutos DESC
+    """)
+    
+    graf_secretarias = cur.fetchall()
+
+    # =====================================================
+    # REQUISIÇÕES - UNIVERSO
+    # =====================================================
+
+    cur.execute("""
+        WITH universo AS (
+            SELECT DISTINCT ON (chave)
+                chave,
+                valor_requisicao,
+                status_analise
+            FROM requisicoes
+            ORDER BY chave, created_at DESC
+        )
+        SELECT
+            COUNT(*) AS qtd_universo,
+            SUM(valor_requisicao) AS valor_universo,
+            COUNT(*) FILTER (
+                WHERE status_analise='ANALISADO'
+            ) AS qtd_analisadas,
+            SUM(valor_requisicao)
+            FILTER (
+                WHERE status_analise='ANALISADO'
+            ) AS valor_analisado
+        FROM universo
+    """)
+    cards_req = cur.fetchone()
+
+    # =====================================================
+    # NOTAS
+    # =====================================================
+
+    cur.execute("""
+        WITH notas AS (
+
+            SELECT
+                r.num_nota,
+                SUM(r.valor_requisicao) AS valor_nota
+            FROM requisicoes r
+            WHERE r.num_nota IS NOT NULL
+              AND r.num_nota <> ''
+            GROUP BY r.num_nota
+
+        ),
+
+        auditoria AS (
+
+            SELECT
+                n.num_nota,
+                n.valor_nota,
+                na.valor_posterior
+            FROM notas n
+            LEFT JOIN notas_auditoria na
+                ON na.num_nota = n.num_nota
+
+        )
+
+        SELECT
+
+            COUNT(*) AS qtd_notas,
+
+            SUM(valor_nota) AS valor_notas,
+
+            SUM(
+                CASE
+                    WHEN valor_posterior IS NOT NULL
+                     AND valor_nota > valor_posterior
+                    THEN valor_nota - valor_posterior
+                    ELSE 0
+                END
+            ) AS beneficio,
+
+            SUM(valor_nota) AS base_total
+
+        FROM auditoria
+    """)
+    cards_notas = cur.fetchone()
+
+    # =====================================================
+    # REQ COM NOTA
+    # =====================================================
+
+    cur.execute("""
+        SELECT
+
+            COUNT(*) FILTER (
+                WHERE num_nota IS NOT NULL
+                  AND num_nota <> ''
+            ) AS qtd_req_nota,
+
+            COUNT(*) FILTER (
+                WHERE status_analise='ANALISADO'
+            ) AS total_analisadas,
+
+            SUM(valor_requisicao)
+            FILTER (
+                WHERE num_nota IS NOT NULL
+                  AND num_nota <> ''
+            ) AS valor_req_nota,
+
+            SUM(valor_requisicao)
+            FILTER (
+                WHERE status_analise='ANALISADO'
+            ) AS valor_total_analisado
+
+        FROM requisicoes
+    """)
+    card_req_nota = cur.fetchone()
+
+    # =====================================================
+    # BENEFÍCIO %
+    # =====================================================
+
+    perc_beneficio = (
+        (
+            (cards_notas["beneficio"] or 0)
+            /
+            (cards_req["valor_analisado"] or 1)
+        ) * 100
+        if cards_req["valor_analisado"]
+        else 0
+    )
+
+    perc_qtd_req_nota = (
+        (
+            card_req_nota["qtd_req_nota"]
+            /
+            card_req_nota["total_analisadas"]
+        ) * 100
+        if card_req_nota["total_analisadas"]
+        else 0
+    )
+
+    perc_valor_req_nota = (
+        (
+            card_req_nota["valor_req_nota"]
+            /
+            card_req_nota["valor_total_analisado"]
+        ) * 100
+        if card_req_nota["valor_total_analisado"]
+        else 0
+    )
+
+    # =====================================================
+    # CRITÉRIOS
+    # =====================================================
+
+    cur.execute("""
+        WITH universo AS (
+            SELECT DISTINCT ON (chave)
+                chave,
+                criterio
+            FROM requisicoes
+            WHERE status_analise='ANALISADO'
+              AND criterio IS NOT NULL
+            ORDER BY chave, created_at DESC
+        )
+
+        SELECT
+            criterio,
+            COUNT(*)::int AS qtd
+        FROM universo
+        GROUP BY criterio
+        ORDER BY criterio
+    """)
+    pizza_criterio = cur.fetchall()
+
+    cur.execute("""
+        SELECT *
+        FROM os
+        ORDER BY codigo
+        """)
+    os_rows = cur.fetchall()
+
+    # =====================================================
+    # VALOR POR CRITÉRIO
+    # =====================================================
+
+    cur.execute("""
+        WITH universo AS (
+            SELECT DISTINCT ON (chave)
+                chave,
+                criterio,
+                valor_requisicao
+            FROM requisicoes
+            WHERE status_analise='ANALISADO'
+              AND criterio IS NOT NULL
+            ORDER BY chave, created_at DESC
+        )
+
+        SELECT
+            criterio,
+            SUM(valor_requisicao) AS valor
+        FROM universo
+        GROUP BY criterio
+        ORDER BY criterio
+    """)
+    valor_criterio = cur.fetchall()
+
+    # =====================================================
+    # CALCULOS PERCENTUAIS E INDICADORES EXEUCAO OS E PAINT
+    # =====================================================
+
+    cur.execute("""
+        SELECT COUNT(*) AS qtd
+        FROM os
+        WHERE
+            COALESCE(plan0100,0) > 0
+            OR COALESCE(exec0100,0) > 0
+            OR COALESCE(rp0100,0) > 0
+            OR COALESCE(rf0100,0) > 0
+    """)
+    
+    os_iniciadas = cur.fetchone()["qtd"] or 0
+
+    perc_os_exec = (
+        (os_iniciadas / total_os) * 100
+        if total_os else 0
+    )
+
+    cur.execute("""
+        SELECT COUNT(*) AS total
+        FROM projeto_paint
+        WHERE COALESCE(hh_atual,0) > 0
+    """)
+    
+    paint_planejados = cur.fetchone()["total"] or 0
+
+    cur.execute("""
+        SELECT COUNT(DISTINCT item_paint) AS total
+        FROM horas
+        WHERE item_paint IS NOT NULL
+          AND item_paint <> ''
+    """)
+    
+    paint_executados = cur.fetchone()["total"] or 0
+
+    perc_paint_exec = (
+        (paint_executados / paint_planejados) * 100
+        if paint_planejados else 0
+    )
+
+    cur.close()
+    conn.close()
+
+    # =====================================================
+    # HTML VIRÁ NA PARTE 2
+    # =====================================================
+
+    html = """
+    <style>
+    
+    .dashboard{
+        padding:20px;
+        color:white;
+    }
+    
+    .dashboard h1{
+        margin-bottom:25px;
+        font-size:32px;
+        font-weight:700;
+        color: white;
+    }
+    
+    body{
+        background:#08172b;
+    }
+    
+    .cards{
+        display:grid;
+        grid-template-columns:repeat(4,1fr);
+        gap:20px;
+        margin-bottom:25px;
+    }
+    
+    .cards-5{
+        display:grid;
+        grid-template-columns:repeat(5,1fr);
+        gap:20px;
+        margin-bottom:25px;
+    }
+
+    .cards-6{
+        display:grid;
+        grid-template-columns:repeat(6,1fr);
+        gap:20px;
+        margin-bottom:25px;
+    }
+    
+    .cards-3{
+        display:grid;
+        grid-template-columns:repeat(3,1fr);
+        gap:20px;
+        margin-bottom:25px;
+    }
+    
+    .card{
+        position:relative;
+        overflow:hidden;
+    
+        border-radius:18px;
+        padding:20px;
+    
+        color:white;
+    
+        box-shadow:
+            0 12px 30px rgba(0,0,0,.25);
+    
+        transition:.25s;
+    }
+    
+    .card:hover{
+        transform:translateY(-4px);
+    }
+    
+    .card h4{
+        margin:0;
+        font-size:14px;
+        opacity:.9;
+        color:white !important;
+    }
+    
+    .card .valor{
+        margin-top:10px;
+        font-size:30px;
+        font-weight:700;
+        color:white !important;
+    }
+    
+    .card .sub{
+        margin-top:8px;
+        font-size:13px;
+        opacity:.95;
+        color:white !important;
+    }
+    
+    .card .icone{
+        position:absolute;
+        right:18px;
+        top:15px;
+        font-size:36px;
+        opacity:.25;
+    }
+    
+    .card-azul{
+        background:
+        linear-gradient(
+            135deg,
+            #2563eb,
+            #1d4ed8
+        );
+        color:white !important;
+    }
+    
+    .card-verde{
+        background:
+        linear-gradient(
+            135deg,
+            #16a34a,
+            #15803d
+        );
+        color:white !important;
+    }
+    
+    .card-roxo{
+        background:
+        linear-gradient(
+            135deg,
+            #7c3aed,
+            #6d28d9
+        );
+        color:white !important;
+    }
+    
+    .card-laranja{
+        background:
+        linear-gradient(
+            135deg,
+            #ea580c,
+            #c2410c
+        );
+        color:white !important;
+    }
+    
+    .card-ciano{
+        background:
+        linear-gradient(
+            135deg,
+            #0891b2,
+            #0e7490
+        );
+        color:white !important;
+    }
+    
+    .chart-box{
+        background:#10233f;
+    
+        border-radius:18px;
+    
+        padding:20px;
+    
+        box-shadow:
+            0 10px 25px rgba(0,0,0,.25);
+    }
+    
+    .chart-title{
+        margin-bottom:10px;
+        font-size:18px;
+        font-weight:600;
+    }
+    
+    .grid-2{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:20px;
+        margin-bottom:25px;
+    }
+    
+    .pipeline{
+        display:grid;
+        grid-template-columns:repeat(5,1fr);
+        gap:20px;
+        margin-bottom:25px;
+    }
+    
+    .pipeline .card{
+        text-align:center;
+    }
+    
+    .progress-box{
+        background:#10233f;
+        border-radius:18px;
+        padding:20px;
+        margin-bottom:25px;
+        color:white !important;
+    }
+
+    .progress-box h3{
+        color:white !important;
+    }
+    
+    .progress{
+        width:100%;
+        height:20px;
+        border-radius:10px;
+        overflow:hidden;
+        background:#1b3358;
+    }
+    
+    .progress-bar{
+        height:100%;
+        background:
+        linear-gradient(
+            90deg,
+            #16a34a,
+            #22c55e
+        );
+    }
+    
+    .section-title{
+        margin-top:35px;
+        margin-bottom:15px;
+        font-size:22px;
+        font-weight:700;
+    }
+    
+    canvas{
+        width:100% !important;
+        height:380px !important;
+    }
+    
+    @media(max-width:1200px){
+    
+        .cards,
+        .cards-5,
+        .cards-3,
+        .pipeline{
+            grid-template-columns:repeat(2,1fr);
+        }
+    
+        .grid-2{
+            grid-template-columns:1fr;
+        }
+    }
+
+    .modal{
+    display:none;
+    position:fixed;
+    z-index:99999;
+    inset:0;
+    background:rgba(0,0,0,.75);
+}
+
+.modal-content{
+    width:95%;
+    height:90%;
+    margin:2% auto;
+
+    background:#08172b;
+
+    border-radius:18px;
+
+    padding:20px;
+
+    overflow:auto;
+
+    color:white;
+}
+
+.close-modal{
+    float:right;
+    cursor:pointer;
+    font-size:28px;
+    font-weight:bold;
+}
+
+.busca input{
+    width:100%;
+    padding:10px;
+    border-radius:10px;
+    border:none;
+    margin-bottom:15px;
+}
+
+.table-modal{
+    width:100%;
+    border-collapse:collapse;
+}
+
+.table-modal th{
+    background:#1e3a8a;
+    color:white;
+    padding:10px;
+    position:sticky;
+    top:0;
+}
+
+.table-modal td{
+    padding:8px;
+    border-bottom:1px solid rgba(255,255,255,.1);
+}
+
+.table-modal tr:hover{
+    background:rgba(255,255,255,.05);
+}
+
+.card-click{
+    cursor:pointer;
+}
+
+.table-modal{
+    min-width:2200px;
+}
+
+.modal-content{
+    overflow:auto;
+}
+    
+    </style>
+    
+    <div class="dashboard">
+    
+    <h1>📊 Auditoria - PAINT 2026</h1>
+    
+    <div class="section-title">
+    Visão Geral
+    </div>
+    
+    <div class="cards">
+    
+        <div
+            class="card card-azul card-click"
+            onclick="abrirPaint()">
+            <div class="icone">📁</div>
+            <h4>Projetos Paint</h4>
+            <div class="valor">{{ total_paint }}</div>
+        </div>
+    
+        <div
+            class="card card-roxo card-click"
+            onclick="abrirOS()">
+            <div class="icone">🗂️</div>
+            <h4>OS</h4>
+            <div class="valor">{{ total_os }}</div>
+        </div>
+    
+        <div class="card card-ciano">
+            <div class="icone">⏱️</div>
+            <h4>HH Planejadas</h4>
+            <div class="valor">{{ total_hh }}</div>
+        </div>
+    
+        <div class="card card-verde">
+            <div class="icone">🚀</div>
+            <h4>HH Executadas</h4>
+            <div class="valor">{{ total_exec_hhmm }}</div>
+        </div>
+    
+    </div>
+    
+    <div class="progress-box">
+    
+        <h3 style="color:white !important;">Execução Global do PAINT por HORAS EXECUTADAS / PREVISTAS</h3>
+    
+        <div style="margin-bottom:10px;">
+            {{ percentual_global|round(2) }}%
+        </div>
+    
+        <div class="progress">
+            <div
+                class="progress-bar"
+                style="width:{{ percentual_global }}%">
+            </div>
+        </div>
+    
+    </div>
+
+    <div class="progress-box">
+
+    <h3 style="color:white !important;">% de Execução do PAINT 2026 - Projetos Em Execução</h3>
+
+    <div style="margin-bottom:10px;">
+        {{ paint_executados }}
+        de
+        {{ paint_planejados }}
+        ({{ perc_paint_exec|round(2) }}%)
+    </div>
+
+    <div class="progress">
+        <div
+            class="progress-bar"
+            style="width:{{ perc_paint_exec }}%">
+        </div>
+    </div>
+
+</div>
+    
+    <div class="section-title">
+    Pipeline das OS
+    </div>
+    
+    <div class="pipeline">
+    
+        <div class="card card-roxo">
+            <h4>Total OS</h4>
+            <div class="valor">{{ total_os }}</div>
+        </div>
+    
+        <div class="card card-ciano">
+            <h4>PLANEJADAS</h4>
+            <div class="valor">{{ os_plan }}</div>
+        </div>
+    
+        <div class="card card-verde">
+            <h4>EXECUTADAS</h4>
+            <div class="valor">{{ os_exec }}</div>
+        </div>
+    
+        <div class="card card-laranja">
+            <h4>RP</h4>
+            <div class="valor">{{ os_rp }}</div>
+        </div>
+    
+        <div class="card card-azul">
+            <h4>RF</h4>
+            <div class="valor">{{ os_rf }}</div>
+        </div>
+    </div>
+
+    <div class="progress-box">
+
+        <h3 style="color:white !important;">Indicador de Execução das O.S</h3>
+    
+        <div style="margin-bottom:10px;">
+            {{ os_iniciadas }}
+            de
+            {{ total_os }}
+            ({{ perc_os_exec|round(2) }}%)
+        </div>
+    
+        <div class="progress">
+            <div
+                class="progress-bar"
+                style="width:{{ perc_os_exec }}%">
+            </div>
+        </div>
+    
+    </div>
+    
+    <div class="section-title">
+    Consultorias/Treinamentos e Orientações para Secretarias
+    </div>
+    
+    <div class="cards">
+    
+        <div class="card card-ciano">
+            <div class="icone">📞</div>
+            <h4>Consultorias</h4>
+            <div class="valor">
+                {{ total_consultorias }}
+            </div>
+            <div class="sub">
+                {{ hhmm_consultorias }} horas
+            </div>
+        </div>
+    
+        <div class="card card-verde">
+            <div class="icone">🤝</div>
+            <h4>Atendimentos</h4>
+            <div class="valor">
+                {{ total_atendimentos }}
+            </div>
+            <div class="sub">
+                {{ hhmm_atendimentos }} horas
+            </div>
+        </div>
+    
+    </div>
+    
+    <div class="section-title">
+    Requisições Preventivas - Resumo
+    </div>
+    
+            <div class="cards-6">
+        
+            <div class="card card-ciano">
+        
+            <div class="icone">✅</div>
+        
+            <h4>Qtd. Analisadas</h4>
+        
+            <div class="valor">
+                {{ cards_req.qtd_analisadas }}
+            </div>
+        
+        </div>
+        
+        <div class="card card-ciano">
+        
+            <div class="icone">💵</div>
+        
+            <h4>Valor Analisado</h4>
+        
+            <div class="valor">
+                R$ {{ fmt_br(cards_req.valor_analisado) }}
+            </div>
+        
+        </div>
+    
+        <div class="card card-roxo">
+            <div class="icone">📝</div>
+            <h4>Notas Emitidas</h4>
+            <div class="valor">
+                {{ cards_notas.qtd_notas }}
+            </div>
+        </div>
+    
+        <div class="card card-roxo">
+            <div class="icone">📂</div>
+            <h4>Req. com Nota</h4>
+            <div class="valor">
+                {{ card_req_nota.qtd_req_nota }}
+            </div>
+            <div class="sub">
+                {{ perc_qtd_req_nota|round(2) }}%
+            </div>
+        </div>
+    
+        <div class="card card-verde">
+            <div class="icone">💰</div>
+            <h4>Benefício Financeiro</h4>
+    
+            <div class="valor">
+                R$ {{ fmt_br(cards_notas.beneficio) }}
+            </div>
+    
+            <div class="sub">
+                {{ perc_beneficio|round(2) }}%
+            </div>
+        </div>
+    
+        <div class="card card-verde">
+    
+            <div class="icone">🎯</div>
+    
+            <h4>Meta Financeira</h4>
+    
+            <div class="valor">
+                {{ perc_beneficio|round(2) }}%
+            </div>
+    
+            <div class="sub">
+                Meta 5%
+            </div>
+    
+            <progress
+                value="{{ perc_beneficio }}"
+                max="5"
+                style="
+                    width:100%;
+                    margin-top:10px;
+                    height:16px;
+                ">
+            </progress>
+    
+        </div>
+    
+    </div>
+    
+    <div class="section-title">
+    Gráficos
+    </div>
+    
+    <div class="grid-2">
+    
+        <div class="chart-box">
+            <div class="chart-title">
+                Horas por Atividade
+            </div>
+            <canvas id="grafAtividade"></canvas>
+        </div>
+    
+        <div class="chart-box">
+            <div class="chart-title">
+                Horas por Projeto Paint
+            </div>
+            <canvas id="grafProjeto"></canvas>
+        </div>
+    
+    </div>
+    
+    <div class="grid-2">
+    
+        <div class="chart-box">
+            <div class="chart-title">
+                Secretarias Atendidas
+            </div>
+            <canvas id="grafSecretarias"></canvas>
+        </div>
+    
+        <div class="chart-box">
+            <div class="chart-title">
+                Critérios das Requisições Preventivas
+            </div>
+            <canvas id="grafCriterio"></canvas>
+        </div>
+    
+    </div>
+    <div id="modalPaint" class="modal">
+    
+        <div class="modal-content">
+    
+            <span
+                class="close-modal"
+                onclick="fecharPaint()">
+                ×
+            </span>
+    
+            <h2>Projetos PAINT</h2>
+    
+            <div class="busca">
+                <input
+                    type="text"
+                    id="searchPaint"
+                    placeholder="Pesquisar..."
+                    onkeyup="filterTable('searchPaint','paintTable')">
+            </div>
+    
+            <table id="paintTable" class="table-modal">
+            
+            <tr>
+                <th>Classificação</th>
+                <th>Item</th>
+                <th>O.S</th>
+                <th>Tipo</th>
+                <th>Objeto</th>
+                <th>Objetivo Geral</th>
+                <th>Início</th>
+                <th>Fim</th>
+                <th>HH Atual</th>
+                <th>HH Executada</th>
+                <th>% Executado</th>
+                <th>Obs</th>
+            </tr>
+            
+            {% for r in paint_data %}
+            <tr>
+                <td>{{ r.classificacao }}</td>
+                <td>{{ r.item_paint }}</td>
+                <td>{{ r.os_list }}</td>
+                <td>{{ r.tipo_atividade }}</td>
+                <td>{{ r.objeto }}</td>
+                <td>{{ r.objetivo_geral }}</td>
+                <td>{{ r.dt_ini }}</td>
+                <td>{{ r.dt_fim }}</td>
+                <td>{{ r.hh_atual }}</td>
+                <td>{{ r.hh_exec }}</td>
+                <td>{{ r.percentual }}%</td>
+                <td>{{ r.obs }}</td>
+            </tr>
+            {% endfor %}
+            
+            </table>
+    
+        </div>
+    
+    </div>
+    
+    <div id="modalOS" class="modal">
+    
+        <div class="modal-content">
+    
+            <span
+                class="close-modal"
+                onclick="fecharOS()">
+                ×
+            </span>
+    
+            <h2>Ordens de Serviço</h2>
+    
+            <div class="busca">
+                <input
+                    type="text"
+                    id="searchOS"
+                    placeholder="Pesquisar..."
+                    onkeyup="filterTable('searchOS','osTable')">
+            </div>
+    
+            <table id="osTable" class="table-modal">
+
+            <tr>
+                <th>Código</th>
+                <th>Item PAINT</th>
+                <th>Resumo</th>
+                <th>Unidade</th>
+                <th>Coordenação</th>
+                <th>Equipe</th>
+                <th>Observação</th>
+                <th>Status</th>
+                <th>PLAN</th>
+                <th>EXEC</th>
+                <th>RP</th>
+                <th>RF</th>
+                <th>Início</th>
+                <th>Fim</th>
+                <th>Conclusão</th>
+            </tr>
+            
+            {% for r in os_rows %}
+            <tr>
+            
+            <td>{{ r.codigo }}</td>
+            <td>{{ r.item_paint }}</td>
+            <td>{{ r.resumo }}</td>
+            <td>{{ r.unidade }}</td>
+            <td>{{ r.coordenacao }}</td>
+            <td>{{ r.equipe }}</td>
+            <td>{{ r.observacao }}</td>
+            <td>{{ r.status }}</td>
+            
+            <td>{{ r.plan0100 }}%</td>
+            <td>{{ r.exec0100 }}%</td>
+            <td>{{ r.rp0100 }}%</td>
+            <td>{{ r.rf0100 }}%</td>
+            
+            <td>{{ r.dt_inicio }}</td>
+            <td>{{ r.dt_fim }}</td>
+            <td>{{ r.dt_conclusao }}</td>
+            
+            </tr>
+            {% endfor %}
+            
+            </table>
+    
+        </div>
+    
+    </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script>
+    
+    function minutosParaHHMM(minutos){
+    
+        let hh = Math.floor(minutos / 60);
+        let mm = minutos % 60;
+    
+        return (
+            String(hh).padStart(2,'0')
+            + ':'
+            + String(mm).padStart(2,'0')
+        );
+    }
+
+const atividade_labels =
+{{ graf_horas_atividade|map(attribute='atividade')|list|tojson }};
+
+const atividade_data =
+{{ graf_horas_atividade|map(attribute='minutos')|list|tojson }};
+
+const projeto_labels =
+{{ graf_horas_projeto|map(attribute='item_paint')|list|tojson }};
+
+const projeto_data =
+{{ graf_horas_projeto|map(attribute='minutos')|list|tojson }};
+
+const secretaria_labels =
+{{ graf_secretarias|map(attribute='secretaria')|list|tojson }};
+
+const secretaria_data =
+{{ graf_secretarias|map(attribute='minutos')|list|tojson }};
+
+const criterio_labels =
+{{ pizza_criterio|map(attribute='criterio')|list|tojson }};
+
+const criterio_data =
+{{ pizza_criterio|map(attribute='qtd')|list|tojson }};
+
+</script>
+
+<script>
+
+if(document.getElementById("grafAtividade")){
+
+new Chart(
+document.getElementById("grafAtividade"),
+{
+    type:"pie",
+
+    data:{
+        labels:atividade_labels,
+
+        datasets:[{
+            data:atividade_data
+        }]
+    },
+
+    plugins:[ChartDataLabels],
+
+    options:{
+
+        responsive:true,
+        maintainAspectRatio:false,
+
+        plugins:{
+
+            legend:{
+                labels:{
+                    color:"white"
+                }
+            },
+
+            tooltip:{
+                callbacks:{
+                    label:function(context){
+    
+                        let valor = context.raw;
+    
+                        return minutosParaHHMM(valor);
+                    }
+                }
+            },
+
+            datalabels:{
+
+                color:"#fff",
+
+                formatter:function(value, ctx){
+
+                    let total =
+                        ctx.chart.data.datasets[0].data
+                        .reduce((a,b)=>a+b,0);
+
+                    let perc =
+                        ((value/total)*100)
+                        .toFixed(1);
+
+                    return minutosParaHHMM(value) + " - " + perc + "%";
+                }
+            }
+        }
+    }
+});
+
+}
+
+if(document.getElementById("grafProjeto")){
+
+new Chart(
+document.getElementById("grafProjeto"),
+{
+    type:"bar",
+
+    data:{
+        labels:projeto_labels,
+
+        datasets:[{
+            label:"Horas",
+            data:projeto_data
+        }]
+    },
+
+    options:{
+
+        responsive:true,
+        maintainAspectRatio:false,
+
+        indexAxis:"y",
+
+        scales:{
+
+            x:{
+                ticks:{
+                    color:"white",
+
+                    callback:function(value){
+                        return minutosParaHHMM(value);
+                    }
+                },
+
+                grid:{
+                    color:"rgba(255,255,255,.08)"
+                }
+            },
+
+            y:{
+                ticks:{
+                    color:"white"
+                },
+
+                grid:{
+                    display:false
+                }
+            }
+        },
+
+        plugins:{
+
+            legend:{
+                display:false
+            },
+
+            tooltip:{
+                callbacks:{
+                    label:function(context){
+
+                        return (
+                            "Horas: "
+                            + minutosParaHHMM(context.raw)
+                        );
+                    }
+                }
+            }
+        }
+    }
+});
+
+}
+
+if(document.getElementById("grafSecretarias")){
+
+new Chart(
+document.getElementById("grafSecretarias"),
+{
+    type:"bar",
+
+    data:{
+        labels:secretaria_labels,
+        datasets:[{
+            label:"Horas:Minutos Gastos",
+            data:secretaria_data
+        }]
+    },
+
+    plugins:[ChartDataLabels],
+
+    options:{
+
+        indexAxis:"y",
+
+        plugins:{
+
+            tooltip:{
+                callbacks:{
+                    label:function(context){
+                        return minutosParaHHMM(context.raw);
+                    }
+                }
+            },
+            
+            datalabels:{
+                color:"#fff",
+
+                formatter:function(value){
+
+                    let hh =
+                        Math.floor(value/60);
+
+                    let mm =
+                        value % 60;
+
+                    return (
+                        String(hh).padStart(2,'0')
+                        + ':'
+                        + String(mm).padStart(2,'0')
+                    );
+                }
+            }
+        }
+    }
+});
+
+}
+
+if(document.getElementById("grafCriterio")){
+
+new Chart(
+document.getElementById("grafCriterio"),
+{
+    type:"doughnut",
+
+    data:{
+        labels:criterio_labels,
+        datasets:[{
+            data:criterio_data
+        }]
+    },
+
+    plugins:[ChartDataLabels],
+
+    options:{
+
+        responsive:true,
+        maintainAspectRatio:false,
+
+        plugins:{
+
+            legend:{
+                labels:{
+                    color:"white"
+                }
+            },
+
+            tooltip:{
+                callbacks:{
+                    label:function(context){
+
+                        let valor = context.raw;
+
+                        let total =
+                            context.dataset.data
+                            .reduce((a,b)=>a+b,0);
+
+                        let perc =
+                            ((valor / total) * 100)
+                            .toFixed(2);
+
+                        return (
+                            valor
+                            + " requisições ("
+                            + perc
+                            + "%)"
+                        );
+                    }
+                }
+            },
+
+            datalabels:{
+
+                color:"#fff",
+
+                formatter:function(value,ctx){
+
+                    let total =
+                        ctx.chart.data.datasets[0].data
+                        .reduce((a,b)=>a+b,0);
+
+                    let perc =
+                        ((value/total)*100)
+                        .toFixed(1);
+
+                    return (
+                        value
+                        + " (" + perc + "%)"
+                    );
+                }
+            }
+        }
+    }
+});
+
+}
+
+function abrirPaint(){
+    document.getElementById("modalPaint").style.display="block";
+}
+
+function fecharPaint(){
+    document.getElementById("modalPaint").style.display="none";
+}
+
+function abrirOS(){
+    document.getElementById("modalOS").style.display="block";
+}
+
+function fecharOS(){
+    document.getElementById("modalOS").style.display="none";
+}
+
+window.onclick=function(e){
+
+    if(e.target===document.getElementById("modalPaint"))
+        fecharPaint();
+
+    if(e.target===document.getElementById("modalOS"))
+        fecharOS();
+}
+
+function filterTable(inputId,tableId){
+
+    let input =
+        document.getElementById(inputId);
+
+    let filter =
+        input.value.toUpperCase();
+
+    let table =
+        document.getElementById(tableId);
+
+    let tr =
+        table.getElementsByTagName("tr");
+
+    for(let i=1;i<tr.length;i++){
+
+        let txt =
+            tr[i].innerText.toUpperCase();
+
+        tr[i].style.display =
+            txt.indexOf(filter)>-1
+            ? ""
+            : "none";
+    }
+}
+
+</script>
+    """
+
+    return render_template_string(
+        BASE.replace(
+            "{% block content %}{% endblock %}",
+            html
+        ),
+    
+        # usuário
+        user=session["user"],
+        perfil=session["perfil"],
+    
+        # visão geral
+        total_paint=total_paint,
+        total_os=total_os,
+        total_hh=total_hh,
+        total_exec_hhmm=total_exec_hhmm,
+        percentual_global=percentual_global,
+    
+        # consultorias / atendimentos
+        total_consultorias=total_consultorias,
+        total_atendimentos=total_atendimentos,
+        hhmm_consultorias=hhmm_consultorias,
+        hhmm_atendimentos=hhmm_atendimentos,
+    
+        # pipeline OS
+        os_plan=os_plan,
+        os_exec=os_exec,
+        os_rp=os_rp,
+        os_rf=os_rf,
+    
+        # requisições
+        cards_req=cards_req,
+        cards_notas=cards_notas,
+        card_req_nota=card_req_nota,
+        perc_beneficio=perc_beneficio,
+        perc_qtd_req_nota=perc_qtd_req_nota,
+        perc_valor_req_nota=perc_valor_req_nota,
+    
+        # gráficos
+        graf_horas_atividade=graf_horas_atividade or [],
+        graf_horas_projeto=graf_horas_projeto or [],
+        graf_secretarias=graf_secretarias or [],
+        pizza_criterio=pizza_criterio or [],
+        valor_criterio=valor_criterio or [],
+    
+        # tabelas
+        paint_data=projetos,
+
+        os_rows=os_rows,
+
+        os_iniciadas=os_iniciadas,
+        perc_os_exec=perc_os_exec,
+        
+        paint_planejados=paint_planejados,
+        paint_executados=paint_executados,
+        perc_paint_exec=perc_paint_exec,
+        
+        # utilidades
+        fmt_br=fmt_br
+    )
+
+@app.route("/api/<tabela>")
+def api_tabela(tabela):
+
+    permitidas = {
+        "atendimentos",
+        "consultorias",
+        "notas_auditoria",
+        "os",
+        "os_status_user",
+        "projeto_paint",
+        "requisicoes",
+        "horas"
+    }
+
+    if tabela not in permitidas:
+        return {"erro": "Tabela não permitida"}, 403
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    from psycopg2 import sql
+
+    cur.execute(
+        sql.SQL("SELECT * FROM {}")
+        .format(sql.Identifier(tabela))
+    )
+
+    dados = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return Response(
+        json.dumps(dados, default=str),
+        mimetype="application/json"
+    )
+
+from flask import send_file
+from openpyxl import Workbook
+import io
+import psycopg2.extras
+from psycopg2 import sql
+
+@app.route("/api/excel/<tabela>")
+def api_excel(tabela):
+
+    permitidas = {
+        "atendimentos",
+        "consultorias",
+        "notas_auditoria",
+        "os",
+        "os_status_user",
+        "projeto_paint",
+        "requisicoes",
+        "horas"
+    }
+
+    if tabela not in permitidas:
+        return {"erro": "Tabela não permitida"}, 403
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cur.execute(
+        sql.SQL("SELECT * FROM {}")
+        .format(sql.Identifier(tabela))
+    )
+
+    dados = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = tabela
+
+    if dados:
+
+        ws.append(list(dados[0].keys()))
+
+        for linha in dados:
+            ws.append(list(linha.values()))
+
+    arquivo = io.BytesIO()
+    wb.save(arquivo)
+    arquivo.seek(0)
+
+    return send_file(
+        arquivo,
+        as_attachment=True,
+        download_name=f"{tabela}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 @app.route("/seed")
