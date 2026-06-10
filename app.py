@@ -10867,13 +10867,19 @@ def painel_audit():
     # =====================================================
 
     cur.execute("""
-        SELECT COUNT(*) AS qtd
-        FROM os
-        WHERE
-            COALESCE(plan0100,0) > 0
-            OR COALESCE(exec0100,0) > 0
-            OR COALESCE(rp0100,0) > 0
-            OR COALESCE(rf0100,0) > 0
+    SELECT COUNT(*) AS qtd
+    FROM os o
+    WHERE
+        COALESCE(o.plan0100,0) > 0
+        OR COALESCE(o.exec0100,0) > 0
+        OR COALESCE(o.rp0100,0) > 0
+        OR COALESCE(o.rf0100,0) > 0
+        OR EXISTS (
+            SELECT 1
+            FROM horas h
+            WHERE h.os_codigo = o.codigo
+              AND COALESCE(h.duracao_minutos,0) > 0
+        )
     """)
     
     os_iniciadas = cur.fetchone()["qtd"] or 0
