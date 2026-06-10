@@ -4984,6 +4984,24 @@ def admin_projetos():
     os_rows = cur.fetchall()
 
     # =============================
+    # HORAS EXECUTADAS POR OS
+    # =============================
+    cur.execute("""
+        SELECT
+            os_codigo,
+            SUM(COALESCE(duracao_minutos,0)) AS minutos
+        FROM horas
+        WHERE os_codigo IS NOT NULL
+          AND os_codigo <> ''
+        GROUP BY os_codigo
+    """)
+    
+    horas_por_os = {
+        row["os_codigo"]: row["minutos"] or 0
+        for row in cur.fetchall()
+    }
+
+    # =============================
     # MAPA DE OS POR ITEM_PAINT
     # =============================
     os_por_item = {}
@@ -5035,8 +5053,32 @@ def admin_projetos():
         })
     
     os_data = []
+
     for r in os_rows:
-        prazo, restante = calcular_prazo(r["dt_inicio"],r["dt_previsao_fim"],r["dt_conclusao"])
+    
+        data_fim_prazo = (
+            r["dt_previsao_fim"]
+            if r["dt_previsao_fim"]
+            else r["rf_dt_envio_sup"]
+        )
+        
+        prazo, restante = calcular_prazo(
+            r["dt_inicio"],
+            data_fim_prazo,
+            r["dt_conclusao"]
+        )
+    
+        minutos = horas_por_os.get(r["codigo"], 0)
+    
+        hh = minutos // 60
+        mm = minutos % 60
+    
+        hh_exec = f"{hh:02d}:{mm:02d}"
+    
+        dt_fim = r["dt_previsao_fim"]
+        if not dt_fim:
+            dt_fim = r["rf_dt_envio_sup"]
+    
         os_data.append({
             "codigo": r["codigo"],
             "item_paint": r["item_paint"],
@@ -5046,14 +5088,17 @@ def admin_projetos():
             "equipe": r["equipe"],
             "observacao": r["observacao"],
             "status": r["status"],
+    
             "plan0100": r["plan0100"],
             "exec0100": r["exec0100"],
             "rp0100": r["rp0100"],
             "rf0100": r["rf0100"],
     
-            # 👇 CAMPOS QUE FALTAVAM
-            "dt_inicio": fmt(r["dt_inicio"]),
-            "dt_fim": fmt(r["dt_previsao_fim"]),
+            "hh_exec": hh_exec,
+    
+            "dt_inicio": fmt(r["dt_inicio"]) if r["dt_inicio"] else "",
+            "dt_fim": fmt(dt_fim) if dt_fim else "",
+    
             "prazo": prazo,
             "restante": restante,
     
@@ -5371,7 +5416,7 @@ def admin_projetos():
         <tr>
             <th>Código</th><th>Item PAINT</th><th>Resumo</th><th>Unidade</th><th>Coordenação</th>
             <th>Equipe</th><th>Observação</th><th>Status</th><th>PLAN</th><th>EXEC</th>
-            <th>RP</th><th>RF</th><th>Início</th><th>Fim</th><th>Prazo</th><th>Restante</th><th style="min-width:90px;">Conclusão</th>
+            <th>RP</th><th>RF</th><th>HR.EXEC</th><th>Início</th><th>Fim</th><th>Prazo</th><th>Restante</th><th style="min-width:90px;">Conclusão</th>
         </tr>
     """
     for r in os_data:
@@ -5380,6 +5425,7 @@ def admin_projetos():
             <td>{r['codigo']}</td><td>{r['item_paint']}</td><td>{r['resumo']}</td><td>{r['unidade']}</td>
             <td>{r['coordenacao']}</td><td>{r['equipe']}</td><td>{r['observacao']}</td><td>{r['status']}</td>
             <td>{pct(r['plan0100'])}</td><td>{pct(r['exec0100'])}</td><td>{pct(r['rp0100'])}</td><td>{pct(r['rf0100'])}</td>
+            <td style="font-weight:bold;">{r['hh_exec']}</td>
             <td>{r['dt_inicio']}</td><td>{r['dt_fim']}</td><td>{r['prazo']}</td><td>{r['restante']}</td><td style="min-width:90px;">{r['dt_conclusao']}</td>
         </tr>
         """
