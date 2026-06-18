@@ -2458,20 +2458,6 @@ def os_gestao():
         Controle das Ordens de Serviço
     </div>
 
-    <div style="margin-bottom:15px;">
-        <a href="/os/gestao/export"
-           style="
-                background:#16a34a;
-                color:white;
-                padding:10px 16px;
-                border-radius:8px;
-                text-decoration:none;
-                font-weight:bold;
-           ">
-           📥 Exportar Dados
-        </a>
-    </div>
-
     <div class="filtro">
         <input type="text" id="searchInput" placeholder="Filtrar...">
     </div>
@@ -2533,82 +2519,6 @@ def os_gestao():
         BASE.replace('{% block content %}{% endblock %}', html),
         user=session['user'],
         perfil=session['perfil']
-    )
-
-from flask import send_file
-from openpyxl import Workbook
-from io import BytesIO
-
-@app.route('/os/gestao/export')
-def os_gestao_export():
-
-    if 'user' not in session:
-        return redirect('/')
-
-    if session['perfil'] != 'admin':
-        return 'Acesso negado'
-
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        SELECT
-            codigo,
-            resumo,
-            unidade,
-            equipe,
-            dt_previsao_fim,
-            COALESCE(plan0100,0) AS plan0100,
-            COALESCE(exec0100,0) AS exec0100,
-            COALESCE(rp0100,0) AS rp0100,
-            COALESCE(rf0100,0) AS rf0100
-        FROM os
-        ORDER BY codigo
-    """)
-
-    rows = cur.fetchall()
-
-    cur.close()
-    con.close()
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "OS Gestão"
-
-    ws.append([
-        "OS",
-        "DESCRIÇÃO",
-        "DIRETORIA",
-        "EQUIPE",
-        "PRAZO",
-        "PLANEJAMENTO (%)",
-        "EXECUÇÃO (%)",
-        "RP (%)",
-        "RF (%)"
-    ])
-
-    for r in rows:
-        ws.append([
-            r["codigo"],
-            r["resumo"],
-            r["unidade"],
-            r["equipe"],
-            r["dt_previsao_fim"],
-            f'{r["plan0100"]}%',
-            f'{r["exec0100"]}%',
-            f'{r["rp0100"]}%',
-            f'{r["rf0100"]}%'
-        ])
-
-    arquivo = BytesIO()
-    wb.save(arquivo)
-    arquivo.seek(0)
-
-    return send_file(
-        arquivo,
-        as_attachment=True,
-        download_name="os_gestao.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 @app.route('/os/rh')
