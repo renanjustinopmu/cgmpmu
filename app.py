@@ -2493,7 +2493,7 @@ def os_gestao():
 
     for r in rows:
     
-         data_fim_prazo = (
+        data_fim_prazo = (
             r['dt_previsao_fim']
             if r['dt_previsao_fim']
             else r['rf_dt_envio_sup']
