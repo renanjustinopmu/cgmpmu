@@ -2505,7 +2505,7 @@ def os_gestao():
             <div class="cell">{r['resumo'] or ''}</div>
             <div class="cell">{r['unidade'] or ''}</div>
             <div class="cell">{r['equipe'] or ''}</div>
-            <div class="cell">{fmt_data(r['data_fim_prazo'])}</div>
+            <div class="cell">{fmt_data(data_fim_prazo)}</div>
             <div class="cell">{pct(r.get('plan0100'))}</div>
             <div class="cell">{pct(r.get('exec0100'))}</div>
             <div class="cell">{pct(r.get('rp0100'))}</div>
