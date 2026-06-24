@@ -3689,7 +3689,7 @@ def lancar():
         SELECT id, chave, tipo, criterio
         FROM requisicoes
         WHERE servidor_id = %s
-          AND status_analise = 'ANDAMENTO'
+          AND status_analise in ('ANDAMENTO', 'ANALISANDO', 'ANALISADO')
         ORDER BY chave
     """, (session["user_id"],))
     requisicoes = [dict(r) for r in cur.fetchall()]
