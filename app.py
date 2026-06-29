@@ -2627,7 +2627,7 @@ def os_rh():
         display:inline-block;
     }
 
-    .st-nao { background:#7f8c8d; }
+    .st-nao { background:#c4083d; }
     .st-and { background:#3498db; }
     .st-pausado { background:#e67e22; }
     .st-aguard { background:#9b59b6; }
