@@ -750,9 +750,11 @@ tr.analisado { background:#e6ffed; }
         <div class="dropdown">
         {% if perfil == 'admin' %}
         <a href="/requisicoes">📄 Requisições</a>
+        <a href="/requisicoes_eng">🏗️ Requisições Eng.</a>
         <a href="/requisicoes/importar">📥 Import</a>
         {% else %}
         <a href="/minhas_delegacoes">📄 Requisições</a>
+        <a href="/requisicoes_eng">🏗️ Requisições Eng.</a>
         {% endif %}
         
         <a href="/notas-auditoria">🧾 Notas Auditoria</a>
@@ -12129,6 +12131,2381 @@ function filterTable(inputId,tableId){
         fmt_br=fmt_br
     )
 
+@app.route("/requisicoes_eng/import", methods=["GET","POST"])
+def requisicoes_eng_import():
+
+    if "user" not in session:
+        return redirect("/")
+
+    if session['perfil'] != 'admin' and session['user'] != 'Laianne Fogaça':
+        return 'Acesso negado'
+
+    msg = ""
+
+    editar = None
+
+    if request.args.get("editar"):
+    
+        con = get_db()
+        cur = con.cursor()
+    
+        cur.execute("""
+            SELECT *
+            FROM req_eng_apontamentos
+            WHERE id=%s
+        """,(request.args.get("editar"),))
+    
+        editar = cur.fetchone()
+    
+        con.close()
+
+    # =====================================
+    # CADASTRAR APONTAMENTO
+    # =====================================
+    if request.method == "POST" and request.form.get("acao") == "novo_ap":
+
+        con = get_db()
+        cur = con.cursor()
+
+        descricao = request.form.get("descricao")
+        tipo = request.form.get("tipo")
+
+        if descricao:
+            cur.execute("""
+                INSERT INTO req_eng_apontamentos(
+                    descricao,
+                    tipo
+                )
+                VALUES(%s,%s)
+                ON CONFLICT(descricao)
+                DO NOTHING
+            """,(
+                descricao,
+                tipo
+            ))
+
+            con.commit()
+
+        con.close()
+
+        return redirect("/requisicoes_eng/import")
+
+
+    # =====================================
+    # EXCLUIR APONTAMENTO
+    # =====================================
+    if request.method == "POST" and request.form.get("acao") == "del_ap":
+
+        con = get_db()
+        cur = con.cursor()
+
+        cur.execute("""
+            DELETE
+            FROM req_eng_apontamentos
+            WHERE id=%s
+        """,(request.form.get("ap_id"),))
+
+        con.commit()
+        con.close()
+
+        return redirect("/requisicoes_eng/import")
+
+    # =====================================
+    # EDITAR APONTAMENTO
+    # =====================================
+    if request.method == "POST" and request.form.get("acao") == "salvar_edit":
+
+        con = get_db()
+        cur = con.cursor()
+    
+        cur.execute("""
+            UPDATE req_eng_apontamentos
+            SET descricao=%s,
+            tipo=%s
+            WHERE id=%s
+        """,(
+            request.form.get("descricao"),
+            request.form.get("tipo"),
+            request.form.get("ap_id")
+        ))
+    
+        con.commit()
+        con.close()
+    
+        return redirect("/requisicoes_eng/import")
+
+    # =====================================
+    # IMPORTAÇÃO
+    # =====================================
+    if request.method == "POST" and not request.form.get("acao"):
+
+        try:
+
+            from openpyxl import load_workbook
+
+            semana = request.form.get("semana")
+            arq = request.files.get("arquivo")
+
+            if not arq:
+                raise Exception("Arquivo não enviado")
+
+            wb = load_workbook(arq, data_only=True)
+            ws = wb.active
+
+            con = get_db()
+            cur = con.cursor()
+
+            inseridos = 0
+            ignorados = 0
+
+            import re
+            from datetime import datetime
+            def parse_data(v):
+            
+                if not v:
+                    return None
+            
+                if isinstance(v, datetime):
+                    return v
+            
+                formatos = [
+                    "%d/%m/%Y %H:%M:%S",
+                    "%d/%m/%Y %H:%M",
+                    "%d/%m/%Y"
+                ]
+            
+                for f in formatos:
+                    try:
+                        return datetime.strptime(
+                            str(v).strip(),
+                            f
+                        )
+                    except:
+                        pass
+            
+                return None
+            
+            for linha in ws.iter_rows(min_row=2, values_only=True):
+            
+                secretaria = str(linha[0]).strip() if linha[0] else ""
+                numero = str(linha[1]).strip() if linha[1] else ""
+            
+                if not secretaria or not numero:
+                    continue
+            
+                m = re.match(r"^(\d+)", secretaria)
+            
+                if not m:
+                    continue
+            
+                codigo = m.group(1).zfill(2)
+            
+                chave = f"{codigo}/{numero}"
+            
+                cur.execute("""
+                    SELECT 1
+                    FROM requisicoes_eng
+                    WHERE chave=%s
+                """, (chave,))
+            
+                if cur.fetchone():
+                    ignorados += 1
+                    continue
+            
+                # ==========================
+                # VALOR
+                # ==========================
+                valor = None
+            
+                if linha[3] is not None:
+            
+                    txt = str(linha[3])
+            
+                    txt = txt.replace("R$", "")
+                    txt = txt.replace(".", "")
+                    txt = txt.replace(",", ".")
+                    txt = txt.strip()
+            
+                    try:
+                        valor = float(txt)
+                    except:
+                        pass
+            
+                # ==========================
+                # DATAS
+                # ==========================
+                data_criacao = None
+                data_tramitacao = None
+            
+                try:
+            
+                    if linha[5]:
+                        data_criacao = parse_data(linha[5])
+            
+                    if linha[7]:
+                        data_tramitacao = parse_data(linha[7])
+            
+                except:
+                    pass
+            
+                cur.execute("""
+                    INSERT INTO requisicoes_eng(
+                        chave,
+                        semana,
+                        secretaria,
+                        numero_ano,
+                        tipo_documento,
+                        valor_requisicao,
+                        nome_solicitante,
+                        data_criacao,
+                        status_atual,
+                        data_tramitacao,
+                        natureza_despesa,
+                        item_despesa,
+                        item_despesa2,
+                        nome_fornecedor,
+                        edital,
+                        contrato
+                    )
+                    VALUES(
+                        %s,%s,%s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,%s,%s,%s
+                    )
+                """, (
+            
+                    chave,
+                    semana,
+            
+                    secretaria,
+                    numero,
+            
+                    linha[2] if linha[2] else None,
+            
+                    valor,
+            
+                    linha[4] if linha[4] else None,
+            
+                    data_criacao,
+            
+                    linha[6] if linha[6] else None,
+            
+                    data_tramitacao,
+            
+                    linha[8] if linha[8] else None,
+            
+                    linha[9] if linha[9] else None,
+            
+                    linha[10] if linha[10] else None,
+            
+                    linha[11] if linha[11] else None,
+            
+                    linha[12] if linha[12] else None,
+            
+                    linha[13] if linha[13] else None
+                ))
+            
+                inseridos += 1
+
+            con.commit()
+            con.close()
+
+            msg = (
+                f"{inseridos} importados. "
+                f"{ignorados} já existiam."
+            )
+
+        except Exception as e:
+            msg = str(e)
+
+    # =====================================
+    # CARREGA APONTAMENTOS
+    # =====================================
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("""
+        SELECT *
+        FROM req_eng_apontamentos
+        ORDER BY id
+    """)
+
+    aps = cur.fetchall()
+
+    con.close()
+
+    # =====================================
+    # HTML
+    # =====================================
+    html = """
+
+<h2>
+📤 Importar Requisições Engenharia
+</h2>
+
+<form
+method="post"
+enctype="multipart/form-data">
+
+    Semana<br>
+
+    <input
+        type="number"
+        name="semana"
+        required
+        style="width:120px">
+
+    <br><br>
+
+    Arquivo Excel<br>
+
+    <input
+        type="file"
+        name="arquivo"
+        accept=".xlsx,.xls"
+        required>
+
+    <br><br>
+
+    <button type="submit">
+        📤 Importar
+    </button>
+
+</form>
+
+{% if msg %}
+<br>
+<div style="
+    background:#eef;
+    padding:10px;
+    border:1px solid #99c;
+">
+{{msg}}
+</div>
+{% endif %}
+
+<hr>
+
+<h3>
+Checklist / Apontamentos
+</h3>
+
+<div style="
+display:flex;
+gap:30px;
+">
+
+<div style="
+flex:1;
+border:1px solid #ddd;
+padding:15px;
+border-radius:8px;
+">
+
+<h4>
+{{ 'Editar apontamento' if editar else 'Novo apontamento' }}
+</h4>
+
+<form method="post">
+
+    <input
+        type="hidden"
+        name="acao"
+        value="{{ 'salvar_edit' if editar else 'novo_ap' }}">
+
+    {% if editar %}
+    <input
+        type="hidden"
+        name="ap_id"
+        value="{{editar.id}}">
+    {% endif %}
+
+    <textarea
+        name="descricao"
+        required
+        style="width:100%;height:100px;"
+    >{{editar.descricao if editar else ''}}</textarea>
+
+    Tipo<br>
+
+<select
+    name="tipo"
+    required
+    style="width:220px">
+
+    <option value="CONTRATAÇÃO"
+    {% if editar and editar.tipo=='CONTRATAÇÃO' %}selected{% endif %}>
+        CONTRATAÇÃO
+    </option>
+
+    <option value="LIQUIDAÇÃO"
+    {% if editar and editar.tipo=='LIQUIDAÇÃO' %}selected{% endif %}>
+        LIQUIDAÇÃO
+    </option>
+
+    <option value="ADITAMENTO"
+    {% if editar and editar.tipo=='ADITAMENTO' %}selected{% endif %}>
+        ADITAMENTO
+    </option>
+
+</select>
+
+<br><br>
+
+    <br><br>
+
+    <button type="submit">
+        {{ '💾 Salvar' if editar else '➕ Cadastrar' }}
+    </button>
+
+</form>
+
+</div>
+
+<div style="
+flex:2;
+border:1px solid #ddd;
+padding:15px;
+border-radius:8px;
+">
+
+<h4>
+Apontamentos cadastrados
+</h4>
+
+<div style="margin-bottom:10px;">
+
+<button onclick="filtrarAp('')">
+Todos
+</button>
+
+<button onclick="filtrarAp('CONTRATAÇÃO')">
+Contratação
+</button>
+
+<button onclick="filtrarAp('LIQUIDAÇÃO')">
+Liquidação
+</button>
+
+<button onclick="filtrarAp('ADITAMENTO')">
+Aditamento
+</button>
+
+</div>
+
+<table id ="tblAp"
+border="1"
+width="100%"
+style="
+border-collapse:collapse;
+">
+
+<tr>
+    <th width="140">Tipo</th>
+    <th>Descrição</th>
+    <th width="120">Ações</th>
+</tr>
+
+{% for a in aps %}
+
+<tr data-tipo="{{a.tipo}}">
+    <td>{{a.tipo}}</td>
+    <td>
+        {{a.descricao}}
+    </td>
+
+    <td>
+
+        <!-- editar -->
+        <form method="post" style="display:inline;">
+
+            <input
+                type="hidden"
+                name="acao"
+                value="edit_ap">
+
+            <input
+                type="hidden"
+                name="ap_id"
+                value="{{a.id}}">
+
+            <a href="/requisicoes_eng/import?editar={{a.id}}">
+                ✏️
+            </a>
+
+        </form>
+
+        <!-- excluir -->
+        <form
+            method="post"
+            style="display:inline;"
+        >
+
+            <input
+                type="hidden"
+                name="acao"
+                value="del_ap">
+
+            <input
+                type="hidden"
+                name="ap_id"
+                value="{{a.id}}">
+
+            <button
+                onclick="return confirm('Excluir?')">
+                🗑
+            </button>
+
+        </form>
+
+    </td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+</div>
+<script>
+function filtrarAp(tipo){
+
+    document.querySelectorAll("#tblAp tr[data-tipo]").forEach(function(linha){
+
+        if(tipo=="" || linha.dataset.tipo==tipo)
+            linha.style.display="";
+
+        else
+            linha.style.display="none";
+
+    });
+
+}
+window.onload = function(){
+    filtrarAp("CONTRATAÇÃO");
+}
+</script>
+</div>
+"""
+
+    return render_template_string(
+        BASE.replace(
+            "{% block content %}{% endblock %}",
+            html
+        ),
+        aps=aps,
+        editar=editar,
+        msg=msg,
+        user=session["user"],
+        perfil=session["perfil"]
+    )
+
+@app.route("/requisicoes_eng")
+def requisicoes_eng():
+    
+    if session['perfil'] != 'admin' and session['user'] != 'Laianne Fogaça':
+        return 'Acesso negado'
+    
+    # aqui fica paginacao se precisar, limit offset, etc
+    con = get_db()
+    cur = con.cursor()
+
+    # =========================
+    # FUNÇÕES AUXILIARES
+    # =========================
+    def extrair_ano(numero_ano):
+        try:
+            if not numero_ano:
+                return datetime.today().year
+            return int(str(numero_ano).split("/")[-1])
+        except:
+            return datetime.today().year
+    
+    
+    def semana_para_mes_ano(semana, ano):
+        try:
+            semana = int(semana)
+    
+            if semana <= 5:
+                mes = "jan"
+            elif semana <= 9:
+                mes = "fev"
+            elif semana <= 13:
+                mes = "mar"
+            elif semana <= 18:
+                mes = "abr"
+            elif semana <= 22:
+                mes = "mai"
+            elif semana <= 26:
+                mes = "jun"
+            elif semana <= 31:
+                mes = "jul"
+            elif semana <= 35:
+                mes = "ago"
+            elif semana <= 39:
+                mes = "set"
+            elif semana <= 44:
+                mes = "out"
+            elif semana <= 48:
+                mes = "nov"
+            else:
+                mes = "dez"
+    
+            return f"{mes}/{str(ano)[-2:]}"
+        except:
+            return ""
+
+    cur.execute("""
+        SELECT *
+        FROM requisicoes_eng
+        ORDER BY semana DESC NULLS LAST, id DESC
+    """)
+
+    rows = cur.fetchall()
+
+    # apontamentos
+    cur.execute("""
+        SELECT *
+        FROM req_eng_apontamentos
+        ORDER BY id
+    """)
+    apontamentos = cur.fetchall()
+
+    # relacionamentos
+    cur.execute("""
+        SELECT requisicao_id,
+               array_agg(apontamento_id) apontamentos
+        FROM req_eng_apontamentos_rel
+        GROUP BY requisicao_id
+    """)
+
+    mapa = {}
+
+    for r in cur.fetchall():
+        mapa[r["requisicao_id"]] = r["apontamentos"]
+
+    for r in rows:
+        r["apontamentos"] = mapa.get(r["id"], [])
+        semana = r.get("semana")
+        ano = extrair_ano(r.get("numero_ano"))
+
+        if semana:
+            mes_ano = semana_para_mes_ano(semana, ano)
+            r["semana_formatada"] = f"{semana} ({mes_ano})"
+        else:
+            r["semana_formatada"] = ""
+
+    cur.execute("""
+        SELECT DISTINCT semana
+        FROM requisicoes_eng
+        WHERE semana IS NOT NULL
+        ORDER BY semana DESC
+    """)
+    
+    semanas = [r["semana"] for r in cur.fetchall()]
+
+    con.close()
+
+    html = """
+<style>
+
+.card{
+    background:white;
+    border-radius:10px;
+    padding:15px;
+    box-shadow:0 2px 10px rgba(0,0,0,.08);
+}
+
+.toolbar{
+    display:flex;
+    gap:10px;
+    margin-bottom:15px;
+}
+
+.toolbar input{
+    padding:8px;
+    width:300px;
+}
+
+.btn{
+    background:#2563eb;
+    color:white;
+    border:none;
+    border-radius:6px;
+    padding:8px 12px;
+    cursor:pointer;
+    text-decoration:none;
+}
+
+.btn-green{
+    background:#16a34a;
+}
+
+.btn-red{
+    background:#dc2626;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+    table-layout:fixed;
+}
+
+th{
+    background:#f3f4f6;
+    font-size:12px;
+}
+
+th,td{
+    border:1px solid #ddd;
+    padding:5px;
+    vertical-align:top;
+    font-size:12px;
+    word-break:break-word;
+}
+
+input,select,textarea{
+    width:100%;
+    box-sizing:border-box;
+    padding:4px;
+    font-size:12px;
+}
+
+textarea{
+    min-height:60px;
+}
+
+.valor{
+    text-align:right;
+}
+
+.col-semana{width:110px}
+.col-secretaria{width:180px}
+.col-numero{width:100px}
+.col-tipo{width:120px}
+.col-valor{width:100px}
+.col-status{width:90px}
+.col-natureza{width:110px}
+.col-item{width:70px}
+.col-desc{width:180px}
+.col-req{width:100px} /* 🔥 FALTAVA ISSO */
+.col-fornecedor{width:180px}
+.col-edital{width:140px}
+.col-contrato{width:140px}
+.col-analise{width:140px}
+.col-oficio{width:120px}
+.col-na{width:90px}
+.col-monitor{width:90px}
+.col-beneficio{width:110px}
+.col-apont{width:220px}
+.col-acao{width:80px}
+
+.auditada td{
+    background:#bbf7d0 !important; /* verde */
+}
+
+.aguardando td{
+    background:#d1d5db !important; /* cinza */
+}
+
+.dispensavel td{
+    background:#fdba74 !important; /* laranja */
+}
+
+.auditar td{
+    background:#fde047 !important; /* amarelo */
+}
+
+</style>
+
+<div class="card">
+
+<h2>
+🏗️ Requisições Engenharia
+</h2>
+
+<div class="toolbar">
+
+<a href="/requisicoes_eng/import"
+class="btn">
+📤 Importar
+</a>
+
+<a
+    id="btnExportar"
+    href="/requisicoes_eng/export"
+    class="btn">
+📥 Exportar
+</a>
+
+<input
+id="busca"
+placeholder="Pesquisar..."
+onkeyup="filtrar()">
+
+</div>
+
+<div style="
+display:flex;
+gap:10px;
+margin-bottom:10px;
+flex-wrap:wrap;
+">
+
+<select id="filtroReq" onchange="filtrar()">
+    <option value="">Req (todos)</option>
+    <option value="-">A CLASSIFICAR</option>
+    <option>ADITAMENTO</option>
+    <option selected>CONTRATAÇÃO</option>
+    <option>LIQUIDAÇÃO</option>
+</select>
+
+<select id="filtroSecretaria" onchange="filtrar()">
+    <option value="">Secretaria (todas)</option>
+
+    {% for s in rows|map(attribute='secretaria')|unique %}
+        {% if s %}
+        <option>{{s}}</option>
+        {% endif %}
+    {% endfor %}
+</select>
+
+<select id="filtroSemana" onchange="filtrar()">
+    <option value="">Todas as semanas</option>
+
+    {% for s in semanas %}
+        <option value="{{s}}">
+            {{s}}
+        </option>
+    {% endfor %}
+</select>
+
+</div>
+<div style="overflow:auto;">
+
+<table id="tbl">
+
+<tr>
+<th class="col-semana">Semana</th>
+<th class="col-numero">Nº Req.</th>
+<th class="col-secretaria">Secretaria</th>
+<th class="col-tipo">Tipo</th>
+<th class="col-valor">Valor</th>
+<th class="col-status">Status</th>
+<th class="col-natureza">Natureza</th>
+<th class="col-item">Item</th>
+<th class="col-desc">Item Desc</th>
+<th class="col-req">Req</th>
+<th class="col-fornecedor">Fornecedor</th>
+<th class="col-edital">Edital</th>
+<th class="col-contrato">Contrato</th>
+<th class="col-analise">Análise</th>
+<th class="col-oficio">Nº Ofício</th>
+<th class="col-na">NA</th>
+<th class="col-monitor">Monitor.</th>
+<th class="col-beneficio">Benefício</th>
+<th class="col-apont">Apontamentos</th>
+<th class="col-acao">Ação</th>
+
+</tr>
+
+{% for r in rows %}
+
+<tr>
+<td>{{r.semana_formatada}}</td>
+<td>{{r.numero_ano}}</td>
+<td>{{r.secretaria}}</td>
+<td>{{r.tipo_documento}}</td>
+
+<td class="valor">
+R$ {{ "{:,.2f}".format(r.valor_requisicao or 0).replace(",", "X").replace(".", ",").replace("X",".") }}
+</td>
+
+<td>{{r.status_atual}}</td>
+
+<td>{{r.natureza_despesa}}</td>
+
+<td>{{r.item_despesa}}</td>
+
+<td>{{r.item_despesa2}}</td>
+
+<td>
+
+<select
+    id="req{{r.id}}"
+    onchange="trocarTipo({{r.id}})">
+
+    <option value=""
+    {% if not r.req_tipo %}selected{% endif %}>
+        -
+    </option>
+
+    <option value="ADITAMENTO"
+    {% if r.req_tipo=='ADITAMENTO' %}selected{% endif %}>
+        ADITAMENTO
+    </option>
+
+    <option value="CONTRATAÇÃO"
+    {% if r.req_tipo=='CONTRATAÇÃO' %}selected{% endif %}>
+        CONTRATAÇÃO
+    </option>
+
+    <option value="LIQUIDAÇÃO"
+    {% if r.req_tipo=='LIQUIDAÇÃO' %}selected{% endif %}>
+        LIQUIDAÇÃO
+    </option>
+
+</select>
+
+</td>
+
+<td>{{r.nome_fornecedor}}</td>
+
+<td>{{r.edital}}</td>
+
+<td>{{r.contrato}}</td>
+
+<td>
+
+<select
+    id="analise{{r.id}}"
+    onchange="aplicarCor(this)">
+
+    <option value=""
+    {% if not r.analise %}selected{% endif %}>
+        -
+    </option>
+
+    <option value="AP"
+    {% if r.analise=='AP' %}selected{% endif %}>
+        AP - Auditada Preventivamente
+    </option>
+
+    <option value="AG"
+    {% if r.analise=='AG' %}selected{% endif %}>
+        AG - Aguardando envio
+    </option>
+
+    <option value="DI"
+    {% if r.analise=='DI' %}selected{% endif %}>
+        DI - Dispensável
+    </option>
+
+    <option value="AR"
+    {% if r.analise=='AR' %}selected{% endif %}>
+        AR - Deverá ser auditada
+    </option>
+
+</select>
+
+</td>
+
+<td>
+<input
+id="oficio{{r.id}}"
+value="{{r.num_oficio or ''}}">
+</td>
+
+<td>
+<input
+id="na{{r.id}}"
+value="{{r.na_gerada or ''}}">
+</td>
+
+<td>
+
+<select id="monitor{{r.id}}">
+<option value="0"
+{% if not r.monitoramento %}
+selected
+{% endif %}
+>
+Não
+</option>
+
+<option value="1"
+{% if r.monitoramento %}
+selected
+{% endif %}
+>
+Sim
+</option>
+
+</select>
+
+</td>
+
+<td>
+
+<input
+id="benef{{r.id}}"
+type="number"
+step="0.01"
+value="{{r.beneficio_financeiro or ''}}">
+
+</td>
+
+<td>
+
+<select
+id="ap{{r.id}}"
+multiple
+size="5">
+
+{% for a in apontamentos %}
+
+{% if a.tipo == r.req_tipo %}
+
+<option
+value="{{a.id}}"
+{% if a.id in r.apontamentos %}
+selected
+{% endif %}
+>
+{{a.descricao}}
+</option>
+
+{% endif %}
+
+{% endfor %}
+
+</select>
+
+</td>
+
+<td>
+
+<button
+class="btn btn-green"
+onclick="salvar({{r.id}})">
+💾
+</button>
+
+<button class="btn btn-red" onclick="excluir({{r.id}})">
+🗑
+</button>
+
+</td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+</div>
+
+</div>
+
+<script>
+
+const APONTAMENTOS = [
+
+{% for a in apontamentos %}
+
+{
+    id: {{a.id}},
+    tipo: {{a.tipo|tojson}},
+    descricao: {{a.descricao|tojson}}
+},
+
+{% endfor %}
+
+];
+
+</script>
+
+<script>
+
+function trocarTipo(id){
+
+    let tipo =
+        document.getElementById("req"+id).value;
+
+    let sel =
+        document.getElementById("ap"+id);
+
+    // guarda os já selecionados
+    let selecionados = [];
+
+    [...sel.options].forEach(o=>{
+        if(o.selected)
+            selecionados.push(o.value);
+    });
+
+    sel.innerHTML = "";
+
+    APONTAMENTOS.forEach(function(a){
+
+        if(a.tipo != tipo)
+            return;
+
+        let op = document.createElement("option");
+
+        op.value = a.id;
+        op.text = a.descricao;
+
+        if(selecionados.includes(String(a.id)))
+            op.selected = true;
+
+        sel.appendChild(op);
+
+    });
+
+}
+
+function filtrar(){
+
+    let busca =
+        document
+        .getElementById("busca")
+        .value
+        .toLowerCase();
+
+    let req =
+        document
+        .getElementById("filtroReq")
+        .value
+        .toLowerCase();
+
+    let sec =
+        document
+        .getElementById("filtroSecretaria")
+        .value
+        .toLowerCase();
+
+    let semana =
+        document
+        .getElementById("filtroSemana")
+        .value;
+
+    document
+    .querySelectorAll("#tbl tr")
+    .forEach((r,i)=>{
+
+        if(i==0)
+            return;
+
+        let texto =
+            r.innerText.toLowerCase();
+
+        let okBusca =
+            texto.includes(busca);
+
+        let valorReq =
+            r.cells[9]
+             .querySelector("select")
+             ?.value
+             .toLowerCase();
+        
+        let okReq;
+        
+        if (!req) {
+            okReq = true;
+        }
+        else if (req == "-") {
+            okReq = valorReq == "";
+        }
+        else {
+            okReq = valorReq == req;
+        }
+
+        let okSec =
+            !sec ||
+            r.cells[2]
+            .innerText
+            .toLowerCase()
+            .includes(sec);
+
+        let okSemana =
+            !semana ||
+            r.cells[0]
+            .innerText
+            .startsWith(semana);
+
+        r.style.display =
+            okBusca &&
+            okReq &&
+            okSec &&
+            okSemana
+            ? ""
+            : "none";
+    });
+
+    atualizarLinkExportacao();
+}
+
+function atualizarLinkExportacao(){
+
+    let p =
+        new URLSearchParams();
+
+    p.set(
+        "req",
+        document
+        .getElementById("filtroReq")
+        .value
+    );
+
+    p.set(
+        "secretaria",
+        document
+        .getElementById("filtroSecretaria")
+        .value
+    );
+
+    p.set(
+        "semana",
+        document
+        .getElementById("filtroSemana")
+        .value
+    );
+
+    p.set(
+        "busca",
+        document
+        .getElementById("busca")
+        .value
+    );
+
+    document
+        .getElementById("btnExportar")
+        .href =
+        "/requisicoes_eng/export?"
+        + p.toString();
+}
+
+function salvar(id){
+
+    let aps=[]
+
+    document
+    .querySelectorAll(
+        "#ap"+id+" option:checked"
+    )
+    .forEach(
+        x=>aps.push(x.value)
+    )
+
+    fetch(
+        "/requisicoes_eng/salvar/"+id,
+        {
+            method:"POST",
+
+            headers:{
+                "Content-Type":
+                "application/json"
+            },
+
+            body:JSON.stringify({
+
+                req_tipo:
+                document
+                    .getElementById(
+                        "req"+id
+                    ).value,
+                
+                analise:
+                document
+                    .getElementById(
+                        "analise"+id
+                    ).value,
+
+                num_oficio:
+                    document
+                    .getElementById(
+                        "oficio"+id
+                    ).value,
+
+                na_gerada:
+                    document
+                    .getElementById(
+                        "na"+id
+                    ).value,
+
+                monitoramento:
+                    document
+                    .getElementById(
+                        "monitor"+id
+                    ).value=="1",
+
+                beneficio:
+                    document
+                    .getElementById(
+                        "benef"+id
+                    ).value,
+
+                apontamentos:
+                    aps
+            })
+        }
+    )
+    .then(r=>r.json())
+    .then(r=>{
+
+        if(r.ok){
+            alert("Salvo")
+        }
+        else{
+            alert("Erro")
+        }
+
+    })
+}
+
+function aplicarCor(sel){
+
+    let tr = sel.closest("tr");
+
+    tr.classList.remove(
+        "auditada",
+        "aguardando",
+        "dispensavel",
+        "auditar"
+    );
+
+    switch(sel.value){
+
+        case "AP":
+            tr.classList.add("auditada");
+            break;
+
+        case "AG":
+            tr.classList.add("aguardando");
+            break;
+
+        case "DI":
+            tr.classList.add("dispensavel");
+            break;
+
+        case "AR":
+            tr.classList.add("auditar");
+            break;
+    }
+}
+
+function excluir(id){
+
+    if(!confirm("Confirma exclusão?")) return;
+
+    fetch("/requisicoes_eng/delete/" + id, {
+        method: "POST"
+    })
+    .then(r => r.json())
+    .then(r => {
+        if(r.ok){
+            alert("Excluído");
+            location.reload();
+        } else {
+            alert("Erro ao excluir");
+        }
+    });
+
+}
+// AQUI NO FINAL
+window.onload = function(){
+
+    document
+        .querySelectorAll("[id^='analise']")
+        .forEach(aplicarCor);
+
+    document
+        .querySelectorAll("[id^='req']")
+        .forEach(function(x){
+
+            trocarTipo(
+                x.id.replace("req","")
+            );
+
+        });
+
+    atualizarLinkExportacao();
+    filtrar();
+}
+</script>
+"""
+
+    return render_template_string(
+        BASE.replace(
+            "{% block content %}{% endblock %}",
+            html
+        ),
+        rows=rows,
+        apontamentos=apontamentos,
+        semanas=semanas,
+        user=session["user"],
+        perfil=session["perfil"]
+    )
+
+@app.route("/painel_reqs_engenharia")
+def painel_reqs_engenharia():
+
+    if "user" not in session:
+        return redirect("/")
+
+    con = get_db()
+    cur = con.cursor()
+
+    req_tipo = request.args.get("req_tipo", "TODOS")
+    secretaria = request.args.get("secretaria", "TODAS")
+
+    cur.execute("""
+        SELECT DISTINCT req_tipo
+        FROM requisicoes_eng
+        WHERE req_tipo IS NOT NULL
+        ORDER BY req_tipo
+    """)
+    tipos = [x["req_tipo"] for x in cur.fetchall()]
+
+    cur.execute("""
+        SELECT DISTINCT secretaria
+        FROM requisicoes_eng
+        WHERE secretaria IS NOT NULL
+        ORDER BY secretaria
+    """)
+    secretarias = [x["secretaria"] for x in cur.fetchall()]
+
+    where = "WHERE r.analise='AP'"
+    params = []
+
+    if req_tipo != "TODOS":
+        where += " AND r.req_tipo=%s"
+        params.append(req_tipo)
+
+    if secretaria != "TODAS":
+        where += " AND r.secretaria=%s"
+        params.append(secretaria)
+
+    filtro_graf = ""
+
+    params_graf = []
+    
+    if req_tipo != "TODOS":
+        filtro_graf += " AND req_tipo=%s"
+        params_graf.append(req_tipo)
+    
+    if secretaria != "TODAS":
+        filtro_graf += " AND secretaria=%s"
+        params_graf.append(secretaria)
+
+    sql = f"""
+        SELECT
+            COUNT(*) AS analisados,
+            COALESCE(SUM(valor_requisicao),0) AS valor_analisado,
+            COUNT(DISTINCT na_gerada) FILTER(WHERE na_gerada IS NOT NULL) AS notas,
+            COALESCE(SUM(valor_requisicao) FILTER(WHERE na_gerada IS NOT NULL),0) AS valor_notas,
+            COUNT(*) FILTER(WHERE na_gerada IS NOT NULL) AS reqs_notas
+        FROM (
+            SELECT
+                chave,
+                MAX(valor_requisicao) AS valor_requisicao,
+                MAX(na_gerada) AS na_gerada,
+                MAX(req_tipo) AS req_tipo,
+                MAX(secretaria) AS secretaria
+            FROM requisicoes_eng
+            WHERE analise='AP'
+            GROUP BY chave
+        ) r
+        WHERE 1=1
+        {"AND r.req_tipo=%s" if req_tipo != "TODOS" else ""}
+        {"AND r.secretaria=%s" if secretaria != "TODAS" else ""}
+    """
+
+    cur.execute(sql, params)
+    dados = cur.fetchone()
+
+    cards = {
+        "analisados": dados["analisados"] or 0,
+        "valor_analisado": dados["valor_analisado"] or 0,
+        "notas": dados["notas"] or 0,
+        "valor_notas": dados["valor_notas"] or 0,
+        "reqs_notas": dados["reqs_notas"] or 0,
+        "apontamentos": 0
+    }
+
+    cur.execute(f"""
+        SELECT COUNT(rel.id) AS apontamentos
+        FROM req_eng_apontamentos_rel rel
+        INNER JOIN requisicoes_eng r
+            ON r.id = rel.requisicao_id
+        {where}
+    """, params)
+    
+    apont = cur.fetchone()
+    
+    cards["apontamentos"] = apont["apontamentos"] or 0    
+
+    # ==========================
+    # GRÁFICO ANALISADOS POR MÊS
+    # ==========================
+    
+    cur.execute(f"""
+    SELECT
+        CASE
+            WHEN semana BETWEEN 1 AND 4 THEN 'Jan'
+            WHEN semana BETWEEN 5 AND 8 THEN 'Fev'
+            WHEN semana BETWEEN 9 AND 13 THEN 'Mar'
+            WHEN semana BETWEEN 14 AND 17 THEN 'Abr'
+            WHEN semana BETWEEN 18 AND 22 THEN 'Mai'
+            WHEN semana BETWEEN 23 AND 26 THEN 'Jun'
+            WHEN semana BETWEEN 27 AND 30 THEN 'Jul'
+            WHEN semana BETWEEN 31 AND 35 THEN 'Ago'
+            WHEN semana BETWEEN 36 AND 39 THEN 'Set'
+            WHEN semana BETWEEN 40 AND 44 THEN 'Out'
+            WHEN semana BETWEEN 45 AND 48 THEN 'Nov'
+            WHEN semana BETWEEN 49 AND 52 THEN 'Dez'
+        END AS mes,
+        COUNT(DISTINCT chave) AS qtd
+    FROM requisicoes_eng
+    WHERE analise='AP'
+    AND EXTRACT(YEAR FROM data_criacao)=2026
+    {filtro_graf}
+    GROUP BY mes
+    ORDER BY MIN(semana)
+    """, params_graf)
+    
+    dados_mes = cur.fetchall()
+    
+    graf_mes_labels = [x["mes"] for x in dados_mes]
+    graf_mes_valores = [x["qtd"] for x in dados_mes]
+    
+    
+    
+    # ==========================
+    # ANALISADOS POR SECRETARIA
+    # ==========================
+    
+    cur.execute(f"""
+    SELECT
+        secretaria,
+        COUNT(DISTINCT chave) AS qtd
+    FROM requisicoes_eng
+    WHERE analise='AP'
+    {filtro_graf}
+    GROUP BY secretaria
+    ORDER BY qtd DESC
+    """, params_graf)
+    
+    dados_secretaria = cur.fetchall()
+    
+    secret_labels = [x["secretaria"] for x in dados_secretaria]
+    secret_valores = [x["qtd"] for x in dados_secretaria]
+    
+    
+    
+    # ==========================
+    # NOTAS POR SECRETARIA
+    # ==========================
+    
+    cur.execute(f"""
+    SELECT
+        secretaria,
+        COUNT(DISTINCT na_gerada) AS qtd
+    FROM requisicoes_eng
+    WHERE analise='AP'
+    AND na_gerada IS NOT NULL
+    {filtro_graf}
+    GROUP BY secretaria
+    ORDER BY qtd DESC
+    """, params_graf)
+    
+    dados_notas = cur.fetchall()
+    
+    notas_labels = [x["secretaria"] for x in dados_notas]
+    notas_valores = [x["qtd"] for x in dados_notas]
+    
+    
+    
+    # ==========================
+    # APONTAMENTOS POR DESCRIÇÃO
+    # ==========================
+    
+    cur.execute(f"""
+    SELECT
+        a.descricao,
+        COUNT(rel.id) AS qtd
+    FROM req_eng_apontamentos_rel rel
+    INNER JOIN req_eng_apontamentos a
+    ON a.id = rel.apontamento_id
+    INNER JOIN requisicoes_eng r
+    ON r.id = rel.requisicao_id
+    WHERE r.analise='AP'
+    {filtro_graf.replace("req_tipo","r.req_tipo").replace("secretaria","r.secretaria")}
+    GROUP BY a.descricao
+    ORDER BY qtd DESC
+    """, params_graf)
+    
+    dados_ap_desc = cur.fetchall()
+    
+    ap_desc_labels = [x["descricao"] for x in dados_ap_desc]
+    ap_desc_valores = [x["qtd"] for x in dados_ap_desc]
+    
+    
+    
+    # ==========================
+    # APONTAMENTOS POR SECRETARIA
+    # ==========================
+    
+    cur.execute(f"""
+    SELECT
+        r.secretaria,
+        COUNT(rel.id) AS qtd
+    FROM req_eng_apontamentos_rel rel
+    INNER JOIN requisicoes_eng r
+    ON r.id = rel.requisicao_id
+    WHERE r.analise='AP'
+    {filtro_graf.replace("req_tipo","r.req_tipo").replace("secretaria","r.secretaria")}
+    GROUP BY r.secretaria
+    ORDER BY qtd DESC
+    """, params_graf)
+    
+    dados_ap_sec = cur.fetchall()
+    
+    ap_sec_labels = [x["secretaria"] for x in dados_ap_sec]
+    ap_sec_valores = [x["qtd"] for x in dados_ap_sec]
+    
+    
+    
+    # ==========================
+    # TABELA FINAL
+    # ==========================
+    
+    cur.execute("""
+    SELECT
+        x.secretaria,
+        x.analisadas,
+        x.valor_analisado,
+        x.notas,
+        x.valor_notas,
+        COALESCE(a.apontamentos,0) AS apontamentos
+    FROM (
+    
+        SELECT
+            secretaria,
+            COUNT(DISTINCT chave) AS analisadas,
+            SUM(valor_requisicao) AS valor_analisado,
+            COUNT(DISTINCT na_gerada) FILTER (WHERE na_gerada IS NOT NULL) AS notas,
+            SUM(valor_requisicao) FILTER (WHERE na_gerada IS NOT NULL) AS valor_notas
+        FROM requisicoes_eng
+        WHERE analise='AP'
+        GROUP BY secretaria
+    
+    ) x
+    
+    LEFT JOIN (
+    
+        SELECT
+            r.secretaria,
+            COUNT(rel.id) AS apontamentos
+        FROM req_eng_apontamentos_rel rel
+        INNER JOIN requisicoes_eng r
+            ON r.id = rel.requisicao_id
+        WHERE r.analise='AP'
+        GROUP BY r.secretaria
+    
+    ) a
+    ON a.secretaria = x.secretaria
+    
+    ORDER BY x.secretaria
+    """)
+    
+    tabela_secretarias = cur.fetchall()
+    
+    con.close()
+
+    html = """
+<style>
+.dashboard-cards {
+    display:grid;
+    grid-template-columns:repeat(6, 1fr);
+    gap:20px;
+    width:100%;
+}
+
+.dashboard-card {
+    background:#ffffff;
+    border:1px solid #d3e0f0;
+    border-radius:16px;
+    padding:20px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.08);
+    min-height:170px;
+    transition:0.2s;
+}
+
+.dashboard-card:hover {
+    transform:translateY(-3px);
+    box-shadow:0 8px 20px rgba(0,0,0,0.12);
+}
+
+.dashboard-icon {
+    width:55px;
+    height:55px;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:28px;
+}
+
+@media(max-width:1200px){
+    .dashboard-cards{
+        grid-template-columns:repeat(3,1fr);
+    }
+}
+
+@media(max-width:768px){
+    .dashboard-cards{
+        grid-template-columns:repeat(1,1fr);
+    }
+}
+.chart-box {
+    background:#ffffff;
+    border:1px solid #d3e0f0;
+    border-radius:16px;
+    padding:20px;
+    margin-top:25px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.08);
+}
+
+.chart-box canvas {
+    height:320px !important;
+}
+
+.chart-box.large canvas {
+    height:450px !important;
+}
+</style>
+<div class="container-fluid py-4">
+
+<div class="card shadow-sm border-0 mb-4">
+<div class="card-body text-center">
+
+<h2 class="fw-bold mb-1">
+<i class="bi bi-clipboard-data-fill text-primary"></i>
+Painel Reqs. Engenharia
+</h2>
+
+<p class="text-muted mb-0">
+Indicadores de análise das requisições de engenharia
+</p>
+
+</div>
+</div>
+
+
+<div class="card shadow-sm border-0 mb-4">
+<div class="card-body">
+
+<form method="GET" class="row justify-content-center g-3">
+
+<div class="col-md-4">
+<label class="fw-bold">
+<i class="bi bi-diagram-3-fill"></i>
+Tipo Requisição
+</label>
+
+<select name="req_tipo" class="form-select shadow-sm" onchange="this.form.submit()">
+
+<option value="TODOS">
+Todos
+</option>
+
+{% for t in tipos %}
+<option value="{{t}}" {% if req_tipo==t %}selected{% endif %}>
+{{t}}
+</option>
+{% endfor %}
+
+</select>
+</div>
+
+
+<div class="col-md-4">
+<label class="fw-bold">
+<i class="bi bi-building-fill"></i>
+Secretaria
+</label>
+
+<select name="secretaria" class="form-select shadow-sm" onchange="this.form.submit()">
+
+<option value="TODAS">
+Todas
+</option>
+
+{% for s in secretarias %}
+<option value="{{s}}" {% if secretaria==s %}selected{% endif %}>
+{{s}}
+</option>
+{% endfor %}
+
+</select>
+</div>
+
+</form>
+
+</div>
+</div>
+<div class="dashboard-cards">
+
+<div class="dashboard-card">
+
+<div class="rounded-circle bg-primary bg-opacity-10 p-3 d-inline-block">
+<i class="bi bi-search text-primary fs-2"></i>
+</div>
+
+<h6 class="text-muted mt-3">
+Analisados
+</h6>
+
+<h2 class="fw-bold">
+{{cards.analisados}}
+</h2>
+
+</div>
+
+
+<div class="dashboard-card">
+
+<div class="rounded-circle bg-success bg-opacity-10 p-3 d-inline-block">
+<i class="bi bi-currency-dollar text-success fs-2"></i>
+</div>
+
+<h6 class="text-muted mt-3">
+Valor Analisado
+</h6>
+
+<h5 class="fw-bold">
+R$ {{ "{:,.2f}".format(cards.valor_analisado).replace(",", "X").replace(".", ",").replace("X",".") }}
+</h5>
+
+</div>
+
+
+<div class="dashboard-card">
+
+<div class="rounded-circle bg-warning bg-opacity-10 p-3 d-inline-block">
+<i class="bi bi-file-earmark-check-fill text-warning fs-2"></i>
+</div>
+
+<h6 class="text-muted mt-3">
+Notas Auditoria
+</h6>
+
+<h2 class="fw-bold">
+{{cards.notas}}
+</h2>
+
+</div>
+
+
+<div class="dashboard-card">
+
+<div class="rounded-circle bg-danger bg-opacity-10 p-3 d-inline-block">
+<i class="bi bi-cash-stack text-danger fs-2"></i>
+</div>
+
+<h6 class="text-muted mt-3">
+Valor Notas
+</h6>
+
+<h5 class="fw-bold">
+R$ {{ "{:,.2f}".format(cards.valor_notas).replace(",", "X").replace(".", ",").replace("X",".") }}
+</h5>
+
+</div>
+
+
+<div class="dashboard-card">
+
+<div class="rounded-circle bg-info bg-opacity-10 p-3 d-inline-block">
+<i class="bi bi-files text-info fs-2"></i>
+</div>
+
+<h6 class="text-muted mt-3">
+Reqs com Nota
+</h6>
+
+<h2 class="fw-bold">
+{{cards.reqs_notas}}
+</h2>
+
+</div>
+
+
+<div class="dashboard-card">
+
+<div class="rounded-circle bg-secondary bg-opacity-10 p-3 d-inline-block">
+<i class="bi bi-exclamation-triangle-fill text-secondary fs-2"></i>
+</div>
+
+<h6 class="text-muted mt-3">
+Apontamentos
+</h6>
+
+<h2 class="fw-bold">
+{{cards.apontamentos}}
+</h2>
+
+</div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+
+<div class="chart-box">
+<h3>
+<i class="bi bi-graph-up"></i>
+Analisados por mês
+</h3>
+<canvas id="grafMes"></canvas>
+</div>
+
+
+<div class="chart-box large">
+<h3>Analisados por Secretaria</h3>
+<canvas id="grafSecretaria"></canvas>
+</div>
+
+
+<div class="chart-box">
+<h3>Notas Auditoria por Secretaria</h3>
+<canvas id="grafNotas"></canvas>
+</div>
+
+
+<div class="chart-box">
+<h3>Apontamentos por Descrição</h3>
+<canvas id="grafApDesc"></canvas>
+</div>
+
+
+<div class="chart-box">
+<h3>Apontamentos por Secretaria</h3>
+<canvas id="grafApSec"></canvas>
+</div>
+
+
+
+<div class="card mt-4">
+
+<h3>
+Resumo por Secretaria
+</h3>
+
+<table width="100%">
+
+<tr>
+<th>Secretaria</th>
+<th>Analisadas</th>
+<th>Valor Analisado</th>
+<th>Notas Auditoria</th>
+<th>Valor Notas</th>
+<th>Apontamentos</th>
+</tr>
+
+
+{% for t in tabela_secretarias %}
+
+<tr>
+
+<td>{{t.secretaria}}</td>
+
+<td>{{t.analisadas}}</td>
+
+<td>
+R$ {{ "{:,.2f}".format(t.valor_analisado or 0) }}
+</td>
+
+<td>{{t.notas}}</td>
+
+<td>
+R$ {{ "{:,.2f}".format(t.valor_notas or 0) }}
+</td>
+
+<td>{{t.apontamentos}}</td>
+</tr>
+
+{% endfor %}
+
+</table>
+
+</div>
+
+
+
+<script>
+Chart.register(ChartDataLabels);
+
+Chart.defaults.plugins.datalabels = {
+    color:'#000',
+    font:{
+        size:11,
+        weight:'bold'
+    },
+    formatter:(value)=>value
+};
+
+new Chart(
+document.getElementById('grafMes'),
+{
+type:'line',
+data:{
+labels:{{graf_mes_labels|safe}},
+datasets:[{
+label:'Analisados',
+data:{{graf_mes_valores|safe}},
+borderWidth:3
+}]
+},
+options:{
+    responsive:true,
+    maintainAspectRatio:false
+}
+});
+
+
+new Chart(
+document.getElementById('grafSecretaria'),
+{
+type:'bar',
+data:{
+labels:{{secret_labels|safe}},
+datasets:[{
+label:'Analisados',
+data:{{secret_valores|safe}}
+}]
+},
+options:{
+responsive:true,
+maintainAspectRatio:false,
+indexAxis:'y'
+}
+});
+
+
+new Chart(
+document.getElementById('grafNotas'),
+{
+type:'bar',
+data:{
+labels:{{notas_labels|safe}},
+datasets:[{
+label:'Notas Auditoria',
+data:{{notas_valores|safe}}
+}]
+},
+options:{
+responsive:true,
+maintainAspectRatio:false
+}
+});
+
+
+new Chart(
+document.getElementById('grafApDesc'),
+{
+type:'bar',
+data:{
+labels:{{ap_desc_labels|safe}},
+datasets:[{
+label:'Quantidade',
+data:{{ap_desc_valores|safe}}
+}]
+},
+options:{
+responsive:true,
+maintainAspectRatio:false
+}
+});
+
+
+new Chart(
+document.getElementById('grafApSec'),
+{
+type:'bar',
+data:{
+labels:{{ap_sec_labels|safe}},
+datasets:[{
+label:'Quantidade',
+data:{{ap_sec_valores|safe}}
+}]
+},
+options:{
+responsive:true,
+maintainAspectRatio:false
+}
+});
+</script>
+
+"""
+
+    return render_template_string(
+        BASE.replace(
+            "{% block content %}{% endblock %}",
+            html
+        ),
+        cards=cards,
+        tipos=tipos,
+        secretarias=secretarias,
+        req_tipo=req_tipo,
+        secretaria=secretaria,
+        user=session["user"],
+        perfil=session["perfil"],
+        graf_mes_labels=graf_mes_labels,
+        graf_mes_valores=graf_mes_valores,
+        secret_labels=secret_labels,
+        secret_valores=secret_valores,
+        notas_labels=notas_labels,
+        notas_valores=notas_valores,
+        ap_desc_labels=ap_desc_labels,
+        ap_desc_valores=ap_desc_valores,
+        ap_sec_labels=ap_sec_labels,
+        ap_sec_valores=ap_sec_valores,
+        tabela_secretarias=tabela_secretarias
+    )
+
+@app.route("/requisicoes_eng/export")
+def requisicoes_eng_export():
+
+    if "user" not in session:
+        return redirect("/")
+
+    import io
+    from openpyxl import Workbook
+    from flask import send_file
+
+    req = request.args.get("req")
+    secretaria = request.args.get("secretaria")
+    semana = request.args.get("semana")
+    busca = request.args.get("busca", "")
+
+    con = get_db()
+    cur = con.cursor()
+
+    sql = """
+        SELECT *
+        FROM requisicoes_eng
+        WHERE 1=1
+    """
+
+    params = []
+
+    if req:
+        sql += " AND req_tipo=%s"
+        params.append(req)
+
+    if secretaria:
+        sql += " AND secretaria=%s"
+        params.append(secretaria)
+
+    if semana:
+        sql += " AND semana=%s"
+        params.append(semana)
+
+    sql += """
+        ORDER BY semana DESC,
+                 id DESC
+    """
+
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+
+    # apontamentos
+    cur.execute("""
+        SELECT
+            r.requisicao_id,
+            string_agg(
+                a.descricao,
+                ' | '
+                ORDER BY a.id
+            ) AS descricao
+        FROM req_eng_apontamentos_rel r
+        JOIN req_eng_apontamentos a
+            ON a.id = r.apontamento_id
+        GROUP BY r.requisicao_id
+    """)
+
+    mapa = {
+        x["requisicao_id"]: x["descricao"]
+        for x in cur.fetchall()
+    }
+
+    con.close()
+
+    # descrição do código da análise
+    analises = {
+        "AP": "Auditada Preventivamente",
+        "AG": "Aguardando envio da Planilha pela Sec. Ordenadora",
+        "DI": "Dispensável de auditoria Req, poderá ser auditado processo",
+        "AR": "Deverá ser auditada a requisição de compra, processo poderá ser oportunamente"
+    }
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Requisições"
+
+    cabecalho = [
+        "Semana",
+        "Nº Req.",
+        "Secretaria",
+        "Tipo",
+        "Valor",
+        "Status",
+        "Natureza",
+        "Item",
+        "Item Desc",
+        "Req",
+        "Fornecedor",
+        "Edital",
+        "Contrato",
+        "Análise",
+        "Nº Ofício",
+        "NA",
+        "Monitor.",
+        "Benefício",
+        "Apontamentos"
+    ]
+
+    ws.append(cabecalho)
+
+    for r in rows:
+
+        linha = [
+            r["semana"],
+            r["numero_ano"],
+            r["secretaria"],
+            r["tipo_documento"],
+            r["valor_requisicao"],
+            r["status_atual"],
+            r["natureza_despesa"],
+            r["item_despesa"],
+            r["item_despesa2"],
+            r["req_tipo"],
+            r["nome_fornecedor"],
+            r["edital"],
+            r["contrato"],
+            analises.get(r.get("analise"), ""),
+            r["num_oficio"],
+            r["na_gerada"],
+            "Sim" if r["monitoramento"] else "Não",
+            r["beneficio_financeiro"],
+            mapa.get(r["id"], "")
+        ]
+
+        # filtro textual igual ao da tela
+        if busca:
+            texto = " ".join(
+                str(x or "").lower()
+                for x in linha
+            )
+
+            if busca.lower() not in texto:
+                continue
+
+        ws.append(linha)
+
+    # largura automática aproximada
+    for coluna in ws.columns:
+        tamanho = max(
+            len(str(c.value or ""))
+            for c in coluna
+        )
+        ws.column_dimensions[
+            coluna[0].column_letter
+        ].width = min(tamanho + 2, 60)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return send_file(
+        output,
+        download_name="requisicoes_eng.xlsx",
+        as_attachment=True,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+@app.route("/requisicoes_eng/delete/<int:id>", methods=["POST"])
+def requisicoes_eng_delete(id):
+
+    if "user" not in session:
+        return {"ok": False}
+
+    con = get_db()
+    cur = con.cursor()
+
+    # remove relacionamentos primeiro
+    cur.execute("""
+        DELETE FROM req_eng_apontamentos_rel
+        WHERE requisicao_id = %s
+    """, (id,))
+
+    cur.execute("""
+        DELETE FROM requisicoes_eng
+        WHERE id = %s
+    """, (id,))
+
+    con.commit()
+    con.close()
+
+    return {"ok": True}
+
+@app.route(
+    "/requisicoes_eng/salvar/<int:id>",
+    methods=["POST"]
+)
+def req_eng_salvar(id):
+
+    if "user" not in session:
+        return jsonify(ok=False)
+
+    data=request.json
+
+    con=get_db()
+    cur=con.cursor()
+
+    cur.execute("""
+        UPDATE requisicoes_eng
+        SET
+            req_tipo=%s,
+            analise=%s,
+            num_oficio=%s,
+            na_gerada=%s,
+            monitoramento=%s,
+            beneficio_financeiro=%s
+        WHERE id=%s
+    """,(
+        data["req_tipo"],
+        data["analise"],
+        data["num_oficio"],
+        data["na_gerada"],
+        data["monitoramento"],
+        data["beneficio"] or None,
+        id
+    ))
+
+    cur.execute("""
+        DELETE
+        FROM req_eng_apontamentos_rel
+        WHERE requisicao_id=%s
+    """,(id,))
+
+    for ap in data["apontamentos"]:
+
+        cur.execute("""
+            INSERT INTO
+            req_eng_apontamentos_rel(
+                requisicao_id,
+                apontamento_id
+            )
+            VALUES(%s,%s)
+        """,(id,ap))
+
+    con.commit()
+    con.close()
+
+    return jsonify(ok=True)
+
 @app.route("/api/<tabela>")
 def api_tabela(tabela):
 
@@ -12140,7 +14517,10 @@ def api_tabela(tabela):
         "os_status_user",
         "projeto_paint",
         "requisicoes",
-        "horas"
+        "horas",
+        "req_eng_apontamentos",
+        "requisicoes_eng",
+        "req_eng_apontamentos_rel"
     }
 
     if tabela not in permitidas:
@@ -12183,7 +14563,10 @@ def api_excel(tabela):
         "os_status_user",
         "projeto_paint",
         "requisicoes",
-        "horas"
+        "horas",
+        "req_eng_apontamentos",
+        "requisicoes_eng",
+        "req_eng_apontamentos_rel"
     }
 
     if tabela not in permitidas:
