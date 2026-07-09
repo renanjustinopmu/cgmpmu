@@ -754,9 +754,9 @@ tr.analisado { background:#e6ffed; }
         <a href="/requisicoes_eng">🏗️ Requisições Eng.</a>
         {% else %}
         <a href="/minhas_delegacoes">📄 Requisições</a>
+        <a href="/requisicoes_eng">🏗️ Requisições Eng.</a>
         {% endif %}
         <a href="/notas-auditoria">🧾 Notas Auditoria</a>
-        <a href="/requisicoes_eng">🏗️ Requisições Eng.</a>
         </div>
         </div>
         
