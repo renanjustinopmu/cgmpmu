@@ -802,6 +802,7 @@ tr.analisado { background:#e6ffed; }
         <a href="/admin_projetos">📂 Projetos</a>
         <a href="/painel_requisicoes">📊 Painel Reqs. Prev.</a>
         <a href="/painel_audit">🔎 Painel Audit. 2026</a>
+        <a href="/painel_reqs_engenharia">🏗️ Painel  Reqs. Eng. 2026</a>
         
         {% if perfil == 'admin' %}
         <a href="/visao">📉 Visão/h</a>
