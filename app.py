@@ -750,14 +750,13 @@ tr.analisado { background:#e6ffed; }
         <div class="dropdown">
         {% if perfil == 'admin' %}
         <a href="/requisicoes">📄 Requisições</a>
-        <a href="/requisicoes_eng">🏗️ Requisições Eng.</a>
         <a href="/requisicoes/importar">📥 Import</a>
+        <a href="/requisicoes_eng">🏗️ Requisições Eng.</a>
         {% else %}
         <a href="/minhas_delegacoes">📄 Requisições</a>
-        <a href="/requisicoes_eng">🏗️ Requisições Eng.</a>
         {% endif %}
-        
         <a href="/notas-auditoria">🧾 Notas Auditoria</a>
+        <a href="/requisicoes_eng">🏗️ Requisições Eng.</a>
         </div>
         </div>
         
