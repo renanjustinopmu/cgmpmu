@@ -12316,20 +12316,20 @@ def requisicoes_eng_import():
                 # VALOR
                 # ==========================
                 valor = None
-            
+
                 if linha[3] is not None:
-            
-                    txt = str(linha[3])
-            
-                    txt = txt.replace("R$", "")
-                    txt = txt.replace(".", "")
-                    txt = txt.replace(",", ".")
-                    txt = txt.strip()
-            
-                    try:
+                
+                    if isinstance(linha[3], (int, float)):
+                        valor = float(linha[3])
+                
+                    else:
+                        txt = str(linha[3]).strip()
+                
+                        txt = txt.replace("R$", "")
+                        txt = txt.replace(".", "")
+                        txt = txt.replace(",", ".")
+                
                         valor = float(txt)
-                    except:
-                        pass
             
                 # ==========================
                 # DATAS
