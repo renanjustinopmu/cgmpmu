@@ -13591,9 +13591,9 @@ def painel_reqs_engenharia():
         SELECT
             COUNT(*) AS analisados,
             COALESCE(SUM(valor_requisicao),0) AS valor_analisado,
-            COUNT(DISTINCT na_gerada) FILTER(WHERE na_gerada IS NOT NULL) AS notas,
-            COALESCE(SUM(valor_requisicao) FILTER(WHERE na_gerada IS NOT NULL),0) AS valor_notas,
-            COUNT(*) FILTER(WHERE na_gerada IS NOT NULL) AS reqs_notas
+            COUNT(DISTINCT na_gerada) FILTER(WHERE TRIM(COALESCE(na_gerada,'')) <> '') AS notas,
+            COALESCE(SUM(valor_requisicao) FILTER(WHERE TRIM(COALESCE(na_gerada,'')) <> ''),0) AS valor_notas,
+            COUNT(*) FILTER(WHERE TRIM(COALESCE(na_gerada,'')) <> '') AS reqs_notas
         FROM (
             SELECT
                 chave,
@@ -13702,7 +13702,7 @@ def painel_reqs_engenharia():
         COUNT(DISTINCT na_gerada) AS qtd
     FROM requisicoes_eng
     WHERE analise='AP'
-    AND na_gerada IS NOT NULL
+    AND TRIM(COALESCE(na_gerada,'')) <> ''
     {filtro_graf}
     GROUP BY secretaria
     ORDER BY qtd DESC
@@ -13771,7 +13771,7 @@ def painel_reqs_engenharia():
     
     cur.execute("""
     SELECT
-        x.secretaria,
+        COALESCE(x.secretaria,'TOTAL GERAL') AS secretaria,
         x.analisadas,
         x.valor_analisado,
         x.notas,
@@ -13783,29 +13783,46 @@ def painel_reqs_engenharia():
             secretaria,
             COUNT(DISTINCT chave) AS analisadas,
             SUM(valor_requisicao) AS valor_analisado,
-            COUNT(DISTINCT na_gerada) FILTER (WHERE na_gerada IS NOT NULL) AS notas,
-            SUM(valor_requisicao) FILTER (WHERE na_gerada IS NOT NULL) AS valor_notas
+            COUNT(DISTINCT na_gerada)
+                FILTER (
+                    WHERE TRIM(COALESCE(na_gerada,'')) <> ''
+                ) AS notas,
+            SUM(valor_requisicao)
+                FILTER (
+                    WHERE TRIM(COALESCE(na_gerada,'')) <> ''
+                ) AS valor_notas
         FROM requisicoes_eng
         WHERE analise='AP'
-        GROUP BY secretaria
+        GROUP BY GROUPING SETS (
+            (secretaria),
+            ()
+        )
     
     ) x
     
     LEFT JOIN (
     
         SELECT
-            r.secretaria,
+            secretaria,
             COUNT(rel.id) AS apontamentos
         FROM req_eng_apontamentos_rel rel
         INNER JOIN requisicoes_eng r
             ON r.id = rel.requisicao_id
         WHERE r.analise='AP'
-        GROUP BY r.secretaria
+        GROUP BY GROUPING SETS (
+            (secretaria),
+            ()
+        )
     
     ) a
-    ON a.secretaria = x.secretaria
+    ON (
+        (x.secretaria = a.secretaria)
+        OR (x.secretaria IS NULL AND a.secretaria IS NULL)
+    )
     
-    ORDER BY x.secretaria
+    ORDER BY
+        CASE WHEN x.secretaria IS NULL THEN 1 ELSE 0 END,
+        x.secretaria;
     """)
     
     tabela_secretarias = cur.fetchall()
