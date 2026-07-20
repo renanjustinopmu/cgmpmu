@@ -14376,6 +14376,7 @@ def requisicoes_eng_export():
     secretaria = request.args.get("secretaria")
     semana = request.args.get("semana")
     busca = request.args.get("busca", "")
+    analise = request.args.get("analise")
 
     con = get_db()
     cur = con.cursor()
@@ -14389,8 +14390,11 @@ def requisicoes_eng_export():
     params = []
 
     if req:
-        sql += " AND req_tipo=%s"
-        params.append(req)
+        if req == "-":
+            sql += " AND (req_tipo IS NULL OR TRIM(req_tipo)='')"
+        else:
+            sql += " AND req_tipo=%s"
+            params.append(req)
 
     if secretaria:
         sql += " AND secretaria=%s"
@@ -14399,6 +14403,10 @@ def requisicoes_eng_export():
     if semana:
         sql += " AND semana=%s"
         params.append(semana)
+
+    if analise:
+        sql += " AND analise=%s"
+        params.append(analise)
 
     sql += """
         ORDER BY semana DESC,
