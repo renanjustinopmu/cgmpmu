@@ -12383,6 +12383,66 @@ def requisicoes_eng_import():
             
                 except:
                     pass
+
+                tipo_documento = linha[2] if linha[2] else ""
+
+                # ===========================================
+                # CLASSIFICAÇÃO DO TIPO DA REQUISIÇÃO
+                # ===========================================
+                
+                CONTRATACAO = {
+                    "REQUISIÇÕES DE COMPRAS",
+                    "REQUERIMENTO PARA REGISTRO DE PREÇOS",
+                    "REQUISIÇÃO DE TERMO DE COLABORAÇÃO",
+                    "REQUISIÇÃO DE TERMO DE FOMENTO",
+                    "REQUISIÇÕES CONSOME SALDO",
+                    "REQUISIÇÃO DE PAGAMENTOS DIVERSOS",
+                    "REQUISIÇÃO EXTRA ORÇAMENTARIA",
+                    "CONTRATO DE GESTÃO",
+                    "REQUISIÇÃO EXTRA ORÇAMENTARIA GERAL",
+                    "REQUISIÇÃO DE REQUERIMENTO PERMISSÃO DE USO",
+                    "REQUISIÇÃO DE COMPRAS - EMENDAS IMPOSITIVAS",
+                    "REQUISIÇÃO PAGAMENTO DIVERSOS - EMENDAS IMPOSITIVAS",
+                    "REQUISIÇAO TERMO DE FOMENTO-EMENDAS IMPOSITIVAS",
+                    "REQUERIMENTO DE COMPRAS",
+                    "REQUISIÇÃO COTAÇÃO",
+                    "REQUISIÇÃO CONSOME RESERVA COMPRAS",
+                    "CONTRATA+",
+                    "REQUISIÇÕES P/ EMPENHAR TFD"
+                }
+                
+                LIQUIDACAO = {
+                    "REQUISIÇÕES P/ LIQUIDAR",
+                    "REQUISIÇÕES P/ REAJUSTAR / REALINHAR - PAGAMENTO DIFERENÇA",
+                    "REQUISIÇÕES P/ LIQUIDAR PAGAMENTOS DIVERSOS",
+                    "REQUISIÇÕES P/ LIQUIDAR TFD",
+                    "REQUISIÇÕES DE LIQUIDAÇÃO-EMENDAS IMPOSITIVAS",
+                    "REQUISIÇOES P/ LIQUIDAR DIARIAS E ADIANTAMENTOS VIAGENS",
+                    "REQUISIÇÃO DE LIQUIDAÇÃO REDUZIDO - DMAE",
+                    "REQUISIÇÕES P/ LIQUIDAR MAIS MÉDICOS",
+                    "REQUISIÇÃO DE LIQUIDAÇÃO REDUZIDO -  DMAE"
+                }
+                
+                ADITAMENTO = {
+                    "REQUISIÇÕES P/ ADITAR",
+                    "REQUISIÇÕES P/ REAJUSTAR / REALINHAR - ACRÉSCIMO",
+                    "REQUISIÇÕES P/ REAJUSTAR / REALINHAR - SUPRESSÃO",
+                    "REQUERIMENTO DE SUPRESSÃO",
+                    "REQUISIÇÕES DE SUBSTITUIÇÃO À DE PRÓXIMO ORÇAMENTO-ADITIVOS",
+                    "REQUISIÇÕES P/ ADITAR - ACRÉSCIMO"
+                }
+                
+                if tipo_documento in CONTRATACAO:
+                    req_tipo = "CONTRATAÇÃO"
+                
+                elif tipo_documento in LIQUIDACAO:
+                    req_tipo = "LIQUIDAÇÃO"
+                
+                elif tipo_documento in ADITAMENTO:
+                    req_tipo = "ADITAMENTO"
+                
+                else:
+                    req_tipo = None
             
                 cur.execute("""
                     INSERT INTO requisicoes_eng(
@@ -12391,6 +12451,7 @@ def requisicoes_eng_import():
                         secretaria,
                         numero_ano,
                         tipo_documento,
+                        req_tipo,
                         valor_requisicao,
                         nome_solicitante,
                         data_criacao,
@@ -12404,7 +12465,7 @@ def requisicoes_eng_import():
                         contrato
                     )
                     VALUES(
-                        %s,%s,%s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,
                         %s,%s,%s,%s,%s,%s,%s,%s
                     )
                 """, (
@@ -12415,7 +12476,8 @@ def requisicoes_eng_import():
                     secretaria,
                     numero,
             
-                    linha[2] if linha[2] else None,
+                    tipo_documento,
+                    req_tipo,
             
                     valor,
             
