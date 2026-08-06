@@ -13087,7 +13087,7 @@ textarea{
 .col-na{width:90px}
 .col-monitor{width:90px}
 .col-beneficio{width:110px}
-.col-apont{width:220px}
+.col-apont{width:360px}
 .col-acao{width:80px}
 
 .auditada td{
@@ -13479,6 +13479,7 @@ size="5">
 
 <option
 value="{{a.id}}"
+title="{{a.descricao}}"
 {% if a.id in r.apontamentos %}
 selected
 {% endif %}
@@ -13593,6 +13594,7 @@ function trocarTipo(id){
 
         op.value = a.id;
         op.text = a.descricao;
+        op.title = a.descricao;   // <-- adiciona isso
 
         if(selecionados.includes(String(a.id)))
             op.selected = true;
