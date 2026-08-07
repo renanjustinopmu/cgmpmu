@@ -3500,7 +3500,8 @@ def os_edit(id):
     
     <div class="card">
     <div class="titulo">📝 Observações</div>
-    <input name='observacao' value='{os['observacao'] or ''}' style='width:100%'>
+    <textarea name="observacao"
+              style="width:100%; height:150px; resize:vertical;">{os['observacao'] or ''}</textarea>
     </div>
     
     <div style="margin-top:15px;">
