@@ -3732,7 +3732,14 @@ def lancar():
             return "Nenhum lançamento informado"
     
         # lista de colaboradores que receberão o lançamento
-        destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
+        if os_codigo in ("1.14/2026", "1.16/2026"):
+            responsaveis_ids = request.form.getlist("responsaveis2[]")
+            destinatarios = [session["user_id"]] + [int(c) for c in responsaveis_ids]
+        elif os_codigo == "1.15/2026":
+            responsaveis_ids = request.form.getlist("responsaveis[]")
+            destinatarios = [session["user_id"]] + [int(c) for c in responsaveis_ids]
+        else:
+            destinatarios = [session["user_id"]] + [int(c) for c in coparticipantes]
         for data, duracao in zip(datas, duracoes):
             if not duracao:
                 continue
