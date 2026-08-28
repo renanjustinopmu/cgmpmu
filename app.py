@@ -779,6 +779,15 @@ tr.analisado { background:#e6ffed; }
         
         </div>
         </div>
+
+        <!-- RECOMENDAÇÕES -->
+        <div class="menu-group">
+        <button class="menu-btn menu8">📋 Recomendações</button>
+        <div class="dropdown">
+        <a href="/recomendacoes">📝 Cadastrar</a>
+        <a href="/recomendacoes/listar">📋 Listagem</a>
+        </div>
+        </div>
         
         <!-- GERENCIAL -->
         {% if perfil=='admin' %}
@@ -14820,6 +14829,3824 @@ def req_eng_salvar(id):
     con.close()
 
     return jsonify(ok=True)
+
+@app.route('/recomendacoes', methods=['GET', 'POST'])
+def recomendacoes_os():
+
+    if 'user' not in session:
+        return redirect('/')
+
+    con = get_db()
+    cur = con.cursor()
+
+    # =========================================================
+    # COLABORADOR LOGADO
+    # =========================================================
+
+    servidor_id = session.get("user_id")
+
+    cur.execute("""
+        SELECT id, nome
+        FROM colaboradores
+        WHERE id = %s
+    """, (servidor_id,))
+
+    colaborador = cur.fetchone()
+
+    cur.execute("""
+        SELECT
+            id,
+            nome
+        FROM colaboradores
+        WHERE nome IS NOT NULL
+          AND TRIM(nome) <> ''
+        ORDER BY nome
+    """)
+    
+    colaboradores = cur.fetchall()
+
+    if not colaborador:
+        con.close()
+        return "Colaborador não encontrado"
+
+    # =========================================================
+    # IDENTIFICAR O.S
+    # =========================================================
+
+    termo_os = request.args.get("os", "").strip()
+
+    os_codigo = termo_os
+    os_resumo = request.args.get("resumo_os", "").strip()
+    
+    if termo_os:
+
+        cur.execute("""
+            SELECT
+                codigo,
+                resumo
+            FROM os
+            WHERE codigo ILIKE %s
+               OR resumo ILIKE %s
+            ORDER BY
+                CASE
+                    WHEN codigo = %s THEN 0
+                    WHEN codigo ILIKE %s THEN 1
+                    ELSE 2
+                END,
+                codigo
+            LIMIT 1
+        """, (
+            termo_os,
+            f"%{termo_os}%",
+            termo_os,
+            f"{termo_os}%"
+        ))
+    
+        os_encontrada = cur.fetchone()
+    
+        if os_encontrada:
+    
+            os_codigo = os_encontrada["codigo"]
+    
+            # =====================================================
+            # 1. RESUMO OFICIAL DA TABELA OS
+            # =====================================================
+    
+            if os_encontrada["resumo"]:
+                os_resumo = os_encontrada["resumo"]
+    
+            else:
+    
+                # =================================================
+                # 2. RESUMO MANUAL DA CONFIGURAÇÃO
+                # =================================================
+    
+                cur.execute("""
+                    SELECT resumo_os
+                    FROM recomendacao_monitoramento_config
+                    WHERE TRIM(os_codigo) = TRIM(%s)
+                      AND resumo_os IS NOT NULL
+                      AND TRIM(resumo_os) <> ''
+                    LIMIT 1
+                """, (os_codigo,))
+    
+                resumo_config = cur.fetchone()
+    
+                if resumo_config and resumo_config["resumo_os"]:
+                    os_resumo = resumo_config["resumo_os"]
+    
+                else:
+    
+                    # =============================================
+                    # 3. COMPATIBILIDADE COM REGISTROS ANTIGOS
+                    # =============================================
+    
+                    cur.execute("""
+                        SELECT resumo_os
+                        FROM recomendacoes
+                        WHERE TRIM(os_codigo) = TRIM(%s)
+                          AND resumo_os IS NOT NULL
+                          AND TRIM(resumo_os) <> ''
+                        ORDER BY id DESC
+                        LIMIT 1
+                    """, (os_codigo,))
+    
+                    resumo_antigo = cur.fetchone()
+    
+                    if resumo_antigo:
+                        os_resumo = resumo_antigo["resumo_os"]
+    
+        else:
+    
+            # =====================================================
+            # O.S NÃO EXISTE NA TABELA OS
+            # =====================================================
+            # Procurar resumo manual salvo na configuração.
+    
+            cur.execute("""
+                SELECT resumo_os
+                FROM recomendacao_monitoramento_config
+                WHERE TRIM(os_codigo) = TRIM(%s)
+                  AND resumo_os IS NOT NULL
+                  AND TRIM(resumo_os) <> ''
+                LIMIT 1
+            """, (termo_os,))
+    
+            resumo_config = cur.fetchone()
+    
+            if resumo_config:
+                os_resumo = resumo_config["resumo_os"]
+    
+            else:
+    
+                # Compatibilidade com registros antigos
+                cur.execute("""
+                    SELECT resumo_os
+                    FROM recomendacoes
+                    WHERE TRIM(os_codigo) = TRIM(%s)
+                      AND resumo_os IS NOT NULL
+                      AND TRIM(resumo_os) <> ''
+                    ORDER BY id DESC
+                    LIMIT 1
+                """, (termo_os,))
+    
+                resumo_antigo = cur.fetchone()
+    
+                if resumo_antigo:
+                    os_resumo = resumo_antigo["resumo_os"]
+                
+    # =========================================================
+    # O.S. JÁ CADASTRADAS NAS RECOMENDAÇÕES
+    # =========================================================
+
+    cur.execute("""
+        SELECT
+            x.os_codigo,
+    
+            COALESCE(
+                NULLIF(MAX(x.resumo_recomendacao), ''),
+                MAX(o.resumo),
+                ''
+            ) AS resumo,
+    
+            CASE
+                WHEN x.os_codigo ~ '/[0-9]{4}$'
+                THEN split_part(x.os_codigo, '/', 2)::int
+                ELSE 0
+            END AS ano
+    
+        FROM (
+    
+            /* O.S. com recomendações */
+            SELECT
+                r.os_codigo,
+                MAX(r.resumo_os) AS resumo_recomendacao
+            FROM recomendacoes r
+            GROUP BY r.os_codigo
+    
+            UNION ALL
+    
+            /* O.S. que possuem somente monitoramento */
+            SELECT
+                mc.os_codigo,
+                MAX(mc.resumo_os) AS resumo_recomendacao
+            FROM recomendacao_monitoramento_config mc
+            GROUP BY mc.os_codigo
+    
+        ) x
+    
+        LEFT JOIN os o
+            ON o.codigo = x.os_codigo
+    
+        GROUP BY
+            x.os_codigo,
+            o.resumo
+    
+        ORDER BY
+            ano DESC,
+            x.os_codigo DESC
+    """)
+    
+    os_cadastradas = cur.fetchall()
+
+    # =========================================================
+    # POST
+    # =========================================================
+
+    if request.method == 'POST':
+
+        os_codigo = request.form.get("os_codigo", "").strip()
+        os_resumo = request.form.get("os_resumo", "").strip()
+
+        cur.execute("""
+            SELECT resumo
+            FROM os
+            WHERE codigo = %s
+            LIMIT 1
+        """, (os_codigo,))
+        
+        os_db = cur.fetchone()
+        
+        if os_db and os_db["resumo"]:
+            os_resumo = os_db["resumo"]
+
+        if not os_codigo:
+            con.close()
+            return "Informe o código da O.S."
+
+        acao = request.form.get("acao")
+
+        # =====================================================
+        # EXCLUIR TODOS OS DADOS DA O.S.
+        # =====================================================
+
+        if acao == "excluir_monitoramento_os":
+
+            # -------------------------------------------------
+            # Apagar todos os monitoramentos
+            # -------------------------------------------------
+
+            cur.execute("""
+                DELETE FROM recomendacao_monitoramentos
+                WHERE os_codigo = %s
+            """, (os_codigo,))
+
+            # -------------------------------------------------
+            # Apagar configuração de monitoramento
+            # -------------------------------------------------
+
+            cur.execute("""
+                DELETE FROM recomendacao_monitoramento_config
+                WHERE os_codigo = %s
+            """, (os_codigo,))
+
+            # -------------------------------------------------
+            # Apagar todas as recomendações
+            # -------------------------------------------------
+
+            cur.execute("""
+                DELETE FROM recomendacoes
+                WHERE os_codigo = %s
+            """, (os_codigo,))
+
+            con.commit()
+            con.close()
+
+            return redirect("/recomendacoes")
+
+        # =====================================================
+        # SALVAR RECOMENDAÇÕES
+        # =====================================================
+
+        if acao == "salvar_recomendacoes":
+
+            ids = request.form.getlist("rec_id[]")
+            descricoes = request.form.getlist("recomendacao[]")
+            prioridades = request.form.getlist("prioridade[]")
+            status = request.form.getlist("status[]")
+
+            # -------------------------------------------------
+            # Atualizar recomendações existentes
+            # -------------------------------------------------
+
+            for rec_id, descricao, prioridade, st in zip(
+                ids,
+                descricoes,
+                prioridades,
+                status
+            ):
+            
+                descricao = descricao.strip()
+            
+                if not descricao:
+                    continue
+            
+                secretarias = request.form.getlist(
+                    f"secretaria[{rec_id}][]"
+                )
+            
+                secretaria = ", ".join(secretarias)
+                
+                cur.execute("""
+                    UPDATE recomendacoes
+                    SET
+                        resumo_os = %s,
+                        descricao = %s,
+                        prioridade = %s,
+                        status = %s,
+                        secretaria = %s,
+                        atualizado_em = NOW()
+                    WHERE id = %s
+                      AND os_codigo = %s
+                """, (
+                    os_resumo,
+                    descricao,
+                    prioridade,
+                    st,
+                    secretaria,
+                    rec_id,
+                    os_codigo
+                ))
+
+            # -------------------------------------------------
+            # Novas recomendações
+            # -------------------------------------------------
+
+            novas_descricoes = request.form.getlist(
+                "nova_recomendacao[]"
+            )
+
+            novas_prioridades = request.form.getlist(
+                "nova_prioridade[]"
+            )
+
+            novos_status = request.form.getlist(
+                "novo_status[]"
+            )
+
+            for i, (descricao, prioridade, st) in enumerate(
+                zip(
+                    novas_descricoes,
+                    novas_prioridades,
+                    novos_status
+                )
+            ):
+            
+                descricao = descricao.strip()
+            
+                if not descricao:
+                    continue
+            
+                secretarias = request.form.getlist(
+                    f"nova_secretaria[{i}][]"
+                )
+            
+                secretaria = ", ".join(secretarias)
+                    
+                cur.execute("""
+                    INSERT INTO recomendacoes (
+                        os_codigo,
+                        resumo_os,
+                        descricao,
+                        prioridade,
+                        status,
+                        secretaria
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                """, (
+                    os_codigo,
+                    os_resumo,
+                    descricao,
+                    prioridade,
+                    st,
+                    secretaria
+                ))
+
+            # -------------------------------------------------
+            # CONFIGURAÇÃO DE MONITORAMENTO DA O.S
+            # -------------------------------------------------
+
+            prazo = request.form.get(
+                "prazo_monitoramento"
+            ) or None
+            
+            coordenadores = request.form.getlist(
+                "coordenador_monitoramento[]"
+            )
+            
+            coordenador = ", ".join(coordenadores)
+            
+            cur.execute("""
+                INSERT INTO recomendacao_monitoramento_config (
+                    os_codigo,
+                    resumo_os,
+                    prazo_monitoramento,
+                    coordenador,
+                    atualizado_por,
+                    atualizado_em
+                )
+                VALUES (%s,%s,%s,%s,%s,NOW())
+            
+                ON CONFLICT (os_codigo)
+                DO UPDATE SET
+                    resumo_os = EXCLUDED.resumo_os,
+                    prazo_monitoramento = EXCLUDED.prazo_monitoramento,
+                    coordenador = EXCLUDED.coordenador,
+                    atualizado_por = EXCLUDED.atualizado_por,
+                    atualizado_em = NOW()
+            """, (
+                os_codigo,
+                os_resumo,
+                prazo,
+                coordenador,
+                servidor_id
+            ))
+
+            con.commit()
+            con.close()
+
+            return redirect(
+                f"/recomendacoes?os={quote(os_codigo)}"
+            )
+
+        # =====================================================
+        # EXCLUIR UM MONITORAMENTO
+        # =====================================================
+
+        elif acao == "excluir_monitoramento":
+
+            monitoramento_id = request.form.get(
+                "monitoramento_id"
+            )
+
+            if monitoramento_id:
+
+                cur.execute("""
+                    DELETE FROM recomendacao_monitoramentos
+                    WHERE id = %s
+                      AND os_codigo = %s
+                """, (
+                    monitoramento_id,
+                    os_codigo
+                ))
+
+            con.commit()
+            con.close()
+
+            return redirect(
+                f"/recomendacoes?os={quote(os_codigo)}"
+            )
+
+        # =====================================================
+        # EXCLUIR RECOMENDAÇÃO
+        # =====================================================
+
+        elif acao == "excluir_recomendacao":
+
+            rec_id = request.form.get("rec_id")
+
+            if rec_id:
+
+                cur.execute("""
+                    DELETE FROM recomendacoes
+                    WHERE id = %s
+                      AND os_codigo = %s
+                """, (
+                    rec_id,
+                    os_codigo
+                ))
+
+            con.commit()
+            con.close()
+
+            return redirect(
+                f"/recomendacoes?os={quote(os_codigo)}"
+            )
+
+        # =====================================================
+        # REGISTRAR MONITORAMENTO
+        # =====================================================
+
+        elif acao == "registrar_monitoramento":
+
+            data_monitoramento = request.form.get(
+                "data_monitoramento"
+            )
+
+            observacao = request.form.get(
+                "observacao_monitoramento"
+            )
+
+            if not data_monitoramento:
+
+                con.close()
+
+                return "Informe a data do monitoramento."
+
+            cur.execute("""
+                INSERT INTO recomendacao_monitoramentos (
+                    os_codigo,
+                    data_monitoramento,
+                    observacao,
+                    servidor_id
+                )
+                VALUES (%s,%s,%s,%s)
+            """, (
+                os_codigo,
+                data_monitoramento,
+                observacao,
+                servidor_id
+            ))
+
+            con.commit()
+            con.close()
+
+            return redirect(
+                f"/recomendacoes?os={quote(os_codigo)}"
+            )
+
+    # =========================================================
+    # CARREGAR RECOMENDAÇÕES
+    # =========================================================
+
+    recomendacoes = []
+
+    if os_codigo:
+
+        cur.execute("""
+            SELECT
+                id,
+                os_codigo,
+                descricao,
+                prioridade,
+                status,
+                secretaria,
+                criado_em,
+                atualizado_em
+            FROM recomendacoes
+            WHERE TRIM(os_codigo) = TRIM(%s)
+            ORDER BY id
+        """, (os_codigo,))
+
+        recomendacoes = cur.fetchall()
+
+    # =========================================================
+    # CONFIGURAÇÃO DE MONITORAMENTO
+    # =========================================================
+
+    monitoramento = None
+
+    if os_codigo:
+
+        cur.execute("""
+            SELECT
+                prazo_monitoramento,
+                coordenador,
+                resumo_os
+            FROM recomendacao_monitoramento_config
+            WHERE TRIM(os_codigo) = TRIM(%s)
+        """, (os_codigo,))
+
+        monitoramento = cur.fetchone()
+
+    # =========================================================
+    # HISTÓRICO DE MONITORAMENTOS
+    # =========================================================
+
+    monitoramentos = []
+
+    if os_codigo:
+
+        cur.execute("""
+            SELECT
+                rm.id,
+                rm.data_monitoramento,
+                rm.observacao,
+                rm.criado_em,
+                c.nome AS colaborador
+            FROM recomendacao_monitoramentos rm
+
+            LEFT JOIN colaboradores c
+                ON c.id = rm.servidor_id
+
+            WHERE rm.os_codigo = %s
+
+            ORDER BY
+                rm.data_monitoramento DESC,
+                rm.id DESC
+        """, (os_codigo,))
+
+        monitoramentos = cur.fetchall()
+
+    # =========================================================
+    # PROGRESSO
+    # =========================================================
+
+    total = len(recomendacoes)
+
+    atendidas = len([
+        r for r in recomendacoes
+        if r["status"] == "ATENDIDO"
+    ])
+
+    parcialmente = len([
+        r for r in recomendacoes
+        if r["status"] == "PARCIALMENTE"
+    ])
+
+    nao_atendidas = len([
+        r for r in recomendacoes
+        if r["status"] == "NÃO ATENDIDO"
+    ])
+
+    percentual = 0
+
+    if total > 0:
+
+        percentual = int(
+            (atendidas / total) * 100
+        )
+
+    con.close()
+
+    # =========================================================
+    # HTML
+    # =========================================================
+
+    html = """
+<style>
+
+.card {
+    background:#fff;
+    border-radius:16px;
+    padding:20px;
+    margin-bottom:18px;
+    box-shadow:0 6px 18px rgba(0,0,0,.07);
+    border:1px solid #eef2f7;
+}
+
+.titulo {
+    font-size:24px;
+    font-weight:700;
+    color:#1f2937;
+}
+
+.subtitulo {
+    color:#6b7280;
+    margin-top:4px;
+}
+
+.btn {
+    background:#2563eb;
+    color:#fff;
+    border:none;
+    padding:10px 16px;
+    border-radius:9px;
+    cursor:pointer;
+    font-weight:600;
+}
+
+.btn:hover {
+    background:#1d4ed8;
+}
+
+.btn-danger {
+    background:#dc2626;
+}
+
+.btn-danger:hover {
+    background:#b91c1c;
+}
+
+.btn-monitor {
+    background:#7c3aed;
+}
+
+.btn-monitor:hover {
+    background:#6d28d9;
+}
+
+.btn-secondary {
+    background:#64748b;
+}
+
+input,
+textarea,
+select {
+    width:100%;
+    box-sizing:border-box;
+    padding:10px;
+    border:1px solid #d1d5db;
+    border-radius:8px;
+    margin-top:5px;
+}
+
+.os-box {
+    display:flex;
+    gap:10px;
+    align-items:end;
+}
+
+.os-box > div {
+    flex:1;
+}
+
+.rec {
+    display:grid;
+    grid-template-columns:40px 1fr 140px 150px 220px 45px;
+    gap:10px;
+    align-items:center;
+    padding:12px;
+    margin-top:10px;
+    border-radius:10px;
+    border-left:6px solid #dc2626;
+    background:#fee2e2;
+}
+
+.rec-atendido {
+    background:#dcfce7;
+    border-left-color:#16a34a;
+}
+
+.rec-parcial {
+    background:#fef9c3;
+    border-left-color:#ca8a04;
+}
+
+.rec-nao {
+    background:#fee2e2;
+    border-left-color:#dc2626;
+}
+
+.prioridade {
+    font-weight:700;
+    text-align:center;
+    padding:8px;
+    border-radius:8px;
+}
+
+.prio-baixo {
+    background:#dcfce7;
+    color:#166534;
+}
+
+.prio-medio {
+    background:#fef9c3;
+    color:#854d0e;
+}
+
+.prio-alto {
+    background:#fed7aa;
+    color:#9a3412;
+}
+
+.prio-extremo {
+    background:#111827;
+    color:#fff;
+}
+
+.status-badge {
+    font-weight:700;
+    text-align:center;
+    padding:8px;
+    border-radius:8px;
+}
+
+.progress-box {
+    background:#e5e7eb;
+    border-radius:15px;
+    height:28px;
+    overflow:hidden;
+    margin-top:10px;
+}
+
+.progress-bar {
+    height:100%;
+    background:#16a34a;
+    color:white;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.monitor-grid {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:15px;
+}
+
+.monitor-history {
+    margin-top:15px;
+}
+
+.monitor-item {
+    border-left:5px solid #7c3aed;
+    background:#f5f3ff;
+    padding:14px;
+    border-radius:8px;
+    margin-top:10px;
+}
+
+.modal {
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.45);
+    z-index:9999;
+    align-items:center;
+    justify-content:center;
+}
+
+.modal-content {
+    background:white;
+    width:min(600px,90%);
+    border-radius:16px;
+    padding:22px;
+    box-shadow:0 15px 40px rgba(0,0,0,.25);
+}
+
+</style>
+
+
+<!-- ===================================================== -->
+<!-- CABEÇALHO / SELEÇÃO DA O.S. -->
+<!-- ===================================================== -->
+
+<div class="card">
+
+    <div style="
+        display:flex;
+        justify-content:space-between;
+        align-items:flex-start;
+        gap:15px;
+    ">
+
+        <div>
+
+            <div class="titulo">
+                📋 Recomendações de Auditoria
+            </div>
+
+            <div class="subtitulo">
+                Informe a O.S para consultar ou registrar as recomendações.
+            </div>
+
+        </div>
+
+        <script>
+        function selecionarOS(select) {
+        
+            const valor = select.value;
+        
+            if (!valor) {
+                return;
+            }
+        
+            window.location.href =
+                "/recomendacoes?os=" +
+                encodeURIComponent(valor);
+        }
+        </script>
+
+        {% if os_codigo %}
+
+        <form
+            method="post"
+            style="margin:0;"
+            onsubmit="return confirmarExcluirOS();"
+        >
+
+            <input
+                type="hidden"
+                name="os_codigo"
+                value="{{ os_codigo }}"
+            >
+
+            <input
+                type="hidden"
+                name="acao"
+                value="excluir_monitoramento_os"
+            >
+
+            <button
+                type="submit"
+                class="btn btn-danger"
+                title="Excluir todos os dados desta O.S"
+            >
+                🗑 Zerar O.S.
+            </button>
+
+        </form>
+
+        {% endif %}
+
+    </div>
+
+
+    <form
+        method="get"
+        style="margin-top:15px;"
+    >
+
+        <div style="margin-bottom:15px;">
+
+            <label>
+                <b>O.S. já cadastradas</b>
+            </label>
+
+            <select
+                id="osCadastrada"
+                onchange="selecionarOS(this)"
+            >
+
+                <option value="">
+                    Selecione uma O.S...
+                </option>
+
+                {% for o in os_cadastradas %}
+
+                <option
+                    value="{{o.os_codigo}}"
+                    {% if o.os_codigo == os_codigo %}selected{% endif %}
+                >
+                    {{o.os_codigo}}
+
+                    {% if o.resumo %}
+                        - {{o.resumo}}
+                    {% endif %}
+
+                </option>
+
+                {% endfor %}
+
+            </select>
+
+        </div>
+
+
+        <div class="os-box">
+
+            <div>
+
+                <label>
+                    <b>O.S</b>
+                </label>
+
+                <input
+                    type="text"
+                    id="campoOS"
+                    name="os"
+                    value="{{ os_codigo }}"
+                    placeholder="Digite o código ou o nome da O.S..."
+                    required
+                >
+
+            </div>
+
+
+            <div style="flex:0 0 130px;">
+
+                <button
+                    class="btn"
+                    style="width:100%;"
+                >
+                    Consultar
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+{% if os_codigo %}
+
+<!-- ===================================================== -->
+<!-- FORMULÁRIO PRINCIPAL -->
+<!-- SOMENTE RECOMENDAÇÕES + PRAZO -->
+<!-- ===================================================== -->
+
+<form method="post">
+    <div style="margin-top:15px;">
+
+        <label for="resumoOS">
+            <b>Resumo da O.S</b>
+        </label>
+    
+        <input
+            type="text"
+            id="resumoOS"
+            name="os_resumo"
+            value="{{ os_resumo }}"
+            placeholder="Nome / descrição da O.S"
+        >
+    
+        {% if os_resumo %}
+    
+        <div style="
+            margin-top:6px;
+            font-size:12px;
+            color:#16a34a;
+        ">
+            ✓ Resumo carregado automaticamente.
+        </div>
+    
+        {% else %}
+    
+        <div style="
+            margin-top:6px;
+            font-size:12px;
+            color:#64748b;
+        ">
+            Informe manualmente o resumo desta O.S.
+        </div>
+    
+        {% endif %}
+    
+    </div>
+    
+    <div style="margin-top:15px;">
+        <label for="coordenadorMonitoramento">
+            <b>Coordenador do Monitoramento</b>
+        </label>
+        {% set coordenadores_selecionados = [] %}
+    
+        {% if monitoramento and monitoramento.coordenador %}
+            {% set coordenadores_selecionados = monitoramento.coordenador.split(',') | map('trim') | list %}
+        {% endif %}
+    
+        <select
+            id="coordenadorMonitoramento"
+            name="coordenador_monitoramento[]"
+            multiple
+            size="5"
+        >
+    
+            {% for c in colaboradores %}
+    
+            <option
+                value="{{ c.nome }}"
+                {% if c.nome in coordenadores_selecionados %}
+                    selected
+                {% endif %}
+            >
+                {{ c.nome }}
+            </option>
+    
+            {% endfor %}
+    
+        </select>
+    
+        <div style="
+            margin-top:6px;
+            font-size:12px;
+            color:#64748b;
+        ">
+            Selecione um ou mais coordenadores responsáveis pelo monitoramento.
+        </div>
+    </div>
+
+    <input
+        type="hidden"
+        name="os_codigo"
+        value="{{ os_codigo }}"
+    >
+
+    <input
+        type="hidden"
+        name="acao"
+        value="salvar_recomendacoes"
+    >
+
+
+    <!-- ================================================= -->
+    <!-- RECOMENDAÇÕES -->
+    <!-- ================================================= -->
+
+    <div class="card">
+
+        <div style="
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+        ">
+
+            <div>
+
+                <div class="titulo">
+                    📝 Recomendações
+                </div>
+
+                <div class="subtitulo">
+
+                    <b>
+                        O.S {{ os_codigo }}
+                    </b>
+
+                    {% if os_resumo %}
+                        — {{ os_resumo }}
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+
+            <button
+                type="button"
+                class="btn"
+                onclick="adicionarRecomendacao()"
+            >
+                ➕ Nova recomendação
+            </button>
+
+        </div>
+
+
+        <div style="margin-top:20px;">
+
+            <b>
+                📊 Progresso das recomendações
+            </b>
+
+            <div style="margin-top:8px;">
+
+                {{ atendidas }} atendidas |
+                {{ parcialmente }} parcialmente |
+                {{ nao_atendidas }} não atendidas
+
+            </div>
+
+
+            <div class="progress-box">
+
+                <div
+                    class="progress-bar"
+                    style="width:{{ percentual }}%"
+                >
+                    {{ percentual }}%
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div id="recomendacoes">
+
+            {% for r in recomendacoes %}
+
+            <div
+                class="rec
+                {% if r.status == 'ATENDIDO' %}
+                    rec-atendido
+                {% elif r.status == 'PARCIALMENTE' %}
+                    rec-parcial
+                {% else %}
+                    rec-nao
+                {% endif %}"
+            >
+
+                <div
+                    class="icone-status"
+                    style="font-size:22px;"
+                >
+
+                    {% if r.status == 'ATENDIDO' %}
+                        ✔
+                    {% elif r.status == 'PARCIALMENTE' %}
+                        ◐
+                    {% else %}
+                        ✖
+                    {% endif %}
+
+                </div>
+
+
+                <div>
+
+                    <input
+                        type="hidden"
+                        name="rec_id[]"
+                        value="{{ r.id }}"
+                    >
+
+                    <textarea
+                        name="recomendacao[]"
+                        rows="2"
+                    >{{ r.descricao }}</textarea>
+
+                </div>
+
+
+                <div>
+
+                    <label>
+                        <b>Prioridade</b>
+                    </label>
+
+                    <select
+                        name="prioridade[]"
+                        onchange="atualizarLinha(this); atualizarPrioridade(this)"
+                        class="prioridade"
+                    >
+
+                        <option
+                            value="BAIXO"
+                            {% if r.prioridade == 'BAIXO' %}selected{% endif %}
+                        >
+                            Baixo
+                        </option>
+
+                        <option
+                            value="MÉDIO"
+                            {% if r.prioridade == 'MÉDIO' %}selected{% endif %}
+                        >
+                            Médio
+                        </option>
+
+                        <option
+                            value="ALTO"
+                            {% if r.prioridade == 'ALTO' %}selected{% endif %}
+                        >
+                            Alto
+                        </option>
+
+                        <option
+                            value="EXTREMO"
+                            {% if r.prioridade == 'EXTREMO' %}selected{% endif %}
+                        >
+                            Extremo
+                        </option>
+
+                    </select>
+
+                </div>
+
+
+                <div>
+
+                    <label>
+                        <b>Status</b>
+                    </label>
+
+                    <select
+                        name="status[]"
+                        onchange="atualizarLinha(this)"
+                    >
+
+                        <option
+                            value="NÃO ATENDIDO"
+                            {% if r.status == 'NÃO ATENDIDO' %}selected{% endif %}
+                        >
+                            Não Atendido
+                        </option>
+
+                        <option
+                            value="PARCIALMENTE"
+                            {% if r.status == 'PARCIALMENTE' %}selected{% endif %}
+                        >
+                            Parcialmente
+                        </option>
+
+                        <option
+                            value="ATENDIDO"
+                            {% if r.status == 'ATENDIDO' %}selected{% endif %}
+                        >
+                            Atendido
+                        </option>
+
+                    </select>
+
+                </div>
+
+                <div>
+
+                    <label>
+                        <b>Secretaria</b>
+                    </label>
+                
+                    {% set secretarias_selecionadas = (r.secretaria or '').split(',') | map('trim') | list %}
+                
+                    <select
+                        name="secretaria[{{ r.id }}][]"
+                        multiple
+                        size="5"
+                    >
+                
+                        <option value="CM"
+                            {% if 'CM' in secretarias_selecionadas %}selected{% endif %}
+                        >CM</option>
+                
+                        <option value="SEGOV"
+                            {% if 'SEGOV' in secretarias_selecionadas %}selected{% endif %}
+                        >SEGOV</option>
+                
+                        <option value="SMGAS"
+                            {% if 'SMGAS' in secretarias_selecionadas %}selected{% endif %}
+                        >SMGAS</option>
+                
+                        <option value="PGM"
+                            {% if 'PGM' in secretarias_selecionadas %}selected{% endif %}
+                        >PGM</option>
+                
+                        <option value="SMA"
+                            {% if 'SMA' in secretarias_selecionadas %}selected{% endif %}
+                        >SMA</option>
+                
+                        <option value="SMF"
+                            {% if 'SMF' in secretarias_selecionadas %}selected{% endif %}
+                        >SMF</option>
+                
+                        <option value="SME"
+                            {% if 'SME' in secretarias_selecionadas %}selected{% endif %}
+                        >SME</option>
+                
+                        <option value="SMCT"
+                            {% if 'SMCT' in secretarias_selecionadas %}selected{% endif %}
+                        >SMCT</option>
+                
+                        <option value="SMS"
+                            {% if 'SMS' in secretarias_selecionadas %}selected{% endif %}
+                        >SMS</option>
+                
+                        <option value="SEDES"
+                            {% if 'SEDES' in secretarias_selecionadas %}selected{% endif %}
+                        >SEDES</option>
+                
+                        <option value="SMAGRO"
+                            {% if 'SMAGRO' in secretarias_selecionadas %}selected{% endif %}
+                        >SMAGRO</option>
+                
+                        <option value="SEINFRA"
+                            {% if 'SEINFRA' in secretarias_selecionadas %}selected{% endif %}
+                        >SEINFRA</option>
+                
+                        <option value="SETTRAN"
+                            {% if 'SETTRAN' in secretarias_selecionadas %}selected{% endif %}
+                        >SETTRAN</option>
+                
+                        <option value="DMAE"
+                            {% if 'DMAE' in secretarias_selecionadas %}selected{% endif %}
+                        >DMAE</option>
+                
+                        <option value="IPREMU"
+                            {% if 'IPREMU' in secretarias_selecionadas %}selected{% endif %}
+                        >IPREMU</option>
+                
+                        <option value="FUTEL"
+                            {% if 'FUTEL' in secretarias_selecionadas %}selected{% endif %}
+                        >FUTEL</option>
+                
+                        <option value="FERUB"
+                            {% if 'FERUB' in secretarias_selecionadas %}selected{% endif %}
+                        >FERUB</option>
+                
+                        <option value="EMAM"
+                            {% if 'EMAM' in secretarias_selecionadas %}selected{% endif %}
+                        >EMAM</option>
+                
+                        <option value="CGM"
+                            {% if 'CGM' in secretarias_selecionadas %}selected{% endif %}
+                        >CGM</option>
+                
+                        <option value="SESURB"
+                            {% if 'SESURB' in secretarias_selecionadas %}selected{% endif %}
+                        >SESURB</option>
+                
+                        <option value="SMH"
+                            {% if 'SMH' in secretarias_selecionadas %}selected{% endif %}
+                        >SMH</option>
+                
+                        <option value="SEJUV"
+                            {% if 'SEJUV' in secretarias_selecionadas %}selected{% endif %}
+                        >SEJUV</option>
+                
+                        <option value="SECOM"
+                            {% if 'SECOM' in secretarias_selecionadas %}selected{% endif %}
+                        >SECOM</option>
+                
+                        <option value="SEDEI"
+                            {% if 'SEDEI' in secretarias_selecionadas %}selected{% endif %}
+                        >SEDEI</option>
+                
+                        <option value="SMGE"
+                            {% if 'SMGE' in secretarias_selecionadas %}selected{% endif %}
+                        >SMGE</option>
+                
+                        <option value="SEPLAN"
+                            {% if 'SEPLAN' in secretarias_selecionadas %}selected{% endif %}
+                        >SEPLAN</option>
+                
+                        <option value="SSEG"
+                            {% if 'SSEG' in secretarias_selecionadas %}selected{% endif %}
+                        >SSEG</option>
+                
+                        <option value="ARESAN"
+                            {% if 'ARESAN' in secretarias_selecionadas %}selected{% endif %}
+                        >ARESAN</option>
+                
+                        <option value="EXTERNO"
+                            {% if 'EXTERNO' in secretarias_selecionadas %}selected{% endif %}
+                        >EXTERNO</option>
+                
+                        <option value="OUTROS"
+                            {% if 'OUTROS' in secretarias_selecionadas %}selected{% endif %}
+                        >OUTROS</option>
+                
+                    </select>
+                
+                </div>
+    
+                <div>
+
+                    <button
+                        type="button"
+                        class="btn btn-danger"
+                        onclick="excluirRecomendacao(this, {{ r.id }})"
+                        title="Excluir recomendação"
+                    >
+                        🗑
+                    </button>
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- MONITORAMENTO -->
+    <!-- ================================================= -->
+
+    <div class="card">
+
+        <div class="titulo">
+            📅 Monitoramento
+        </div>
+
+
+        <div
+            class="monitor-grid"
+            style="margin-top:15px;"
+        >
+
+            <div>
+
+                <label>
+                    <b>Prazo Monitoramento</b>
+                </label>
+
+                <input
+                    type="date"
+                    name="prazo_monitoramento"
+                    value="{% if monitoramento %}{{ monitoramento.prazo_monitoramento or '' }}{% endif %}"
+                >
+
+            </div>
+
+        </div>
+
+
+        <div style="
+            display:flex;
+            gap:10px;
+            margin-top:20px;
+            flex-wrap:wrap;
+        ">
+
+            <button
+                type="button"
+                class="btn btn-monitor"
+                onclick="abrirMonitoramento()"
+            >
+                ＋ Registrar Monitoramento
+            </button>
+
+
+            <button
+                type="button"
+                class="btn btn-secondary"
+                onclick="abrirHistorico()"
+            >
+                📜 Ver monitoramentos registrados
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- SALVAR -->
+    <!-- ================================================= -->
+
+    <div style="
+        display:flex;
+        justify-content:flex-end;
+        margin-bottom:30px;
+    ">
+
+        <button
+            type="submit"
+            class="btn"
+        >
+            💾 Salvar alterações
+        </button>
+
+    </div>
+
+</form>
+
+
+<!-- ===================================================== -->
+<!-- MODAL NOVO MONITORAMENTO -->
+<!-- FORA DO FORM PRINCIPAL -->
+<!-- ===================================================== -->
+
+<div
+    id="modalMonitoramento"
+    class="modal"
+>
+
+    <div class="modal-content">
+
+        <h3>
+            📅 Registrar Monitoramento
+        </h3>
+
+
+        <form method="post">
+
+            <input
+                type="hidden"
+                name="os_codigo"
+                value="{{ os_codigo }}"
+            >
+
+            <input
+                type="hidden"
+                name="acao"
+                value="registrar_monitoramento"
+            >
+
+
+            <label>
+                <b>Data do monitoramento</b>
+            </label>
+
+            <input
+                type="date"
+                name="data_monitoramento"
+                required
+            >
+
+
+            <label
+                style="
+                    display:block;
+                    margin-top:12px;
+                "
+            >
+                <b>Observações</b>
+            </label>
+
+            <textarea
+                name="observacao_monitoramento"
+                rows="6"
+                placeholder="Descreva o que foi realizado no monitoramento..."
+            ></textarea>
+
+
+            <div style="
+                display:flex;
+                justify-content:flex-end;
+                gap:10px;
+                margin-top:15px;
+            ">
+
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    onclick="fecharMonitoramento()"
+                >
+                    Cancelar
+                </button>
+
+
+                <button
+                    type="submit"
+                    class="btn btn-monitor"
+                >
+                    Registrar
+                </button>
+
+            </div>
+
+        </form>
+
+    </div>
+
+</div>
+
+
+<!-- ===================================================== -->
+<!-- MODAL HISTÓRICO -->
+<!-- ===================================================== -->
+
+<div
+    id="modalHistorico"
+    class="modal"
+>
+
+    <div class="modal-content">
+
+        <h3>
+            📜 Histórico de Monitoramentos
+        </h3>
+
+
+        <div class="monitor-history">
+
+            {% if monitoramentos %}
+
+                {% for m in monitoramentos %}
+
+                <div class="monitor-item">
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        gap:10px;
+                    ">
+
+                        <div>
+
+                            <b>
+                                📅
+                                {{ m.data_monitoramento.strftime('%d/%m/%Y') if m.data_monitoramento else '' }}
+                            </b>
+
+                        </div>
+
+
+                        <form
+                            method="post"
+                            style="margin:0;"
+                        >
+
+                            <input
+                                type="hidden"
+                                name="os_codigo"
+                                value="{{ os_codigo }}"
+                            >
+
+                            <input
+                                type="hidden"
+                                name="acao"
+                                value="excluir_monitoramento"
+                            >
+
+                            <input
+                                type="hidden"
+                                name="monitoramento_id"
+                                value="{{ m.id }}"
+                            >
+
+                            <button
+                                type="submit"
+                                class="btn btn-danger"
+                                style="
+                                    padding:6px 10px;
+                                    font-size:13px;
+                                "
+                                title="Excluir este monitoramento"
+                                onclick="
+                                    return confirmarExcluirMonitoramento();
+                                "
+                            >
+                                🗑
+                            </button>
+
+                        </form>
+
+                    </div>
+
+
+                    <div style="margin-top:8px;">
+
+                        {{ m.observacao or 'Sem observações.' }}
+
+                    </div>
+
+
+                    <div style="
+                        margin-top:8px;
+                        color:#6b7280;
+                        font-size:13px;
+                    ">
+
+                        👤 Registrado por:
+
+                        <b>
+                            {{ m.colaborador or 'Não identificado' }}
+                        </b>
+
+                    </div>
+
+                </div>
+
+                {% endfor %}
+
+            {% else %}
+
+                <div style="
+                    padding:20px;
+                    text-align:center;
+                    color:#6b7280;
+                ">
+                    Nenhum monitoramento registrado.
+                </div>
+
+            {% endif %}
+
+        </div>
+
+
+        <div style="
+            display:flex;
+            justify-content:flex-end;
+            margin-top:20px;
+        ">
+
+            <button
+                type="button"
+                class="btn btn-secondary"
+                onclick="fecharHistorico()"
+            >
+                Fechar
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- ===================================================== -->
+<!-- FORMULÁRIO PARA EXCLUSÃO DE RECOMENDAÇÃO -->
+<!-- ===================================================== -->
+
+<form
+    id="formExcluir"
+    method="post"
+    style="display:none;"
+>
+
+    <input
+        type="hidden"
+        name="os_codigo"
+        value="{{ os_codigo }}"
+    >
+
+    <input
+        type="hidden"
+        name="acao"
+        value="excluir_recomendacao"
+    >
+
+    <input
+        type="hidden"
+        name="rec_id"
+        id="recIdExcluir"
+    >
+
+</form>
+
+<script>
+window.colaboradoresRecomendacoes = [
+    {% for c in colaboradores %}
+        {{ c.nome|tojson }}{% if not loop.last %},{% endif %}
+    {% endfor %}
+];
+</script>
+
+<script>
+
+function abrirMonitoramento() {
+
+    const modal =
+        document.getElementById("modalMonitoramento");
+
+    if (!modal) {
+        return;
+    }
+
+    modal.style.display = "flex";
+}
+
+
+function fecharMonitoramento() {
+
+    const modal =
+        document.getElementById("modalMonitoramento");
+
+    if (!modal) {
+        return;
+    }
+
+    modal.style.display = "none";
+}
+
+
+function abrirHistorico() {
+
+    const modal =
+        document.getElementById("modalHistorico");
+
+    if (!modal) {
+        return;
+    }
+
+    modal.style.display = "flex";
+}
+
+
+function fecharHistorico() {
+
+    const modal =
+        document.getElementById("modalHistorico");
+
+    if (!modal) {
+        return;
+    }
+
+    modal.style.display = "none";
+}
+
+
+function excluirRecomendacao(botao, id) {
+
+    if (!confirm(
+        "Deseja realmente excluir esta recomendação?"
+    )) {
+        return;
+    }
+
+    const campo =
+        document.getElementById("recIdExcluir");
+
+    const formulario =
+        document.getElementById("formExcluir");
+
+    if (!campo || !formulario) {
+        return;
+    }
+
+    campo.value = id;
+
+    formulario.submit();
+}
+
+
+function atualizarPrioridade(select) {
+
+    if (!select) {
+        return;
+    }
+
+    select.classList.remove(
+        "prio-baixo",
+        "prio-medio",
+        "prio-alto",
+        "prio-extremo"
+    );
+
+
+    if (select.value === "BAIXO") {
+        select.classList.add("prio-baixo");
+    }
+
+    else if (select.value === "MÉDIO") {
+        select.classList.add("prio-medio");
+    }
+
+    else if (select.value === "ALTO") {
+        select.classList.add("prio-alto");
+    }
+
+    else if (select.value === "EXTREMO") {
+        select.classList.add("prio-extremo");
+    }
+}
+
+
+function atualizarLinha(elemento) {
+
+    if (!elemento) {
+        return;
+    }
+
+    const linha =
+        elemento.closest(".rec");
+
+    if (!linha) {
+        return;
+    }
+
+
+    const status =
+        linha.querySelector(
+            "select[name='status[]'], select[name='novo_status[]']"
+        );
+
+
+    const prioridade =
+        linha.querySelector(
+            "select[name='prioridade[]'], select[name='nova_prioridade[]']"
+        );
+
+
+    const icone =
+        linha.querySelector(".icone-status");
+
+
+    linha.classList.remove(
+        "rec-atendido",
+        "rec-parcial",
+        "rec-nao"
+    );
+
+
+    if (status) {
+
+        if (status.value === "ATENDIDO") {
+
+            linha.classList.add("rec-atendido");
+
+            if (icone) {
+                icone.textContent = "✔";
+            }
+
+        }
+
+        else if (status.value === "PARCIALMENTE") {
+
+            linha.classList.add("rec-parcial");
+
+            if (icone) {
+                icone.textContent = "◐";
+            }
+
+        }
+
+        else {
+
+            linha.classList.add("rec-nao");
+
+            if (icone) {
+                icone.textContent = "✖";
+            }
+
+        }
+
+    }
+
+
+    if (prioridade) {
+        atualizarPrioridade(prioridade);
+    }
+}
+
+let indiceNovaRecomendacao = 0;
+function adicionarRecomendacao() {
+
+    const container =
+        document.getElementById("recomendacoes");
+
+    if (!container) {
+        return;
+    }
+
+    const indice =
+        indiceNovaRecomendacao++;
+
+    const div =
+        document.createElement("div");
+
+    div.className =
+        "rec rec-nao";
+
+
+    // =====================================================
+    // ÍCONE
+    // =====================================================
+
+    const icone =
+        document.createElement("div");
+
+    icone.className =
+        "icone-status";
+
+    icone.style.fontSize =
+        "22px";
+
+    icone.textContent =
+        "✖";
+
+
+    // =====================================================
+    // DESCRIÇÃO
+    // =====================================================
+
+    const blocoDescricao =
+        document.createElement("div");
+
+    const textarea =
+        document.createElement("textarea");
+
+    textarea.name =
+        "nova_recomendacao[]";
+
+    textarea.rows =
+        2;
+
+    textarea.placeholder =
+        "Digite a nova recomendação...";
+
+    blocoDescricao.appendChild(
+        textarea
+    );
+
+
+    // =====================================================
+    // PRIORIDADE
+    // =====================================================
+
+    const blocoPrioridade =
+        document.createElement("div");
+
+    const labelPrioridade =
+        document.createElement("label");
+
+    labelPrioridade.innerHTML =
+        "<b>Prioridade</b>";
+
+    const selectPrioridade =
+        document.createElement("select");
+
+    selectPrioridade.name =
+        "nova_prioridade[]";
+
+    selectPrioridade.className =
+        "prioridade prio-baixo";
+
+
+    const opBaixo =
+        document.createElement("option");
+
+    opBaixo.value =
+        "BAIXO";
+
+    opBaixo.textContent =
+        "Baixo";
+
+
+    const opMedio =
+        document.createElement("option");
+
+    opMedio.value =
+        "MÉDIO";
+
+    opMedio.textContent =
+        "Médio";
+
+
+    const opAlto =
+        document.createElement("option");
+
+    opAlto.value =
+        "ALTO";
+
+    opAlto.textContent =
+        "Alto";
+
+
+    const opExtremo =
+        document.createElement("option");
+
+    opExtremo.value =
+        "EXTREMO";
+
+    opExtremo.textContent =
+        "Extremo";
+
+
+    selectPrioridade.appendChild(
+        opBaixo
+    );
+
+    selectPrioridade.appendChild(
+        opMedio
+    );
+
+    selectPrioridade.appendChild(
+        opAlto
+    );
+
+    selectPrioridade.appendChild(
+        opExtremo
+    );
+
+
+    selectPrioridade.addEventListener(
+        "change",
+        function() {
+
+            atualizarLinha(
+                selectPrioridade
+            );
+
+            atualizarPrioridade(
+                selectPrioridade
+            );
+
+        }
+    );
+
+
+    blocoPrioridade.appendChild(
+        labelPrioridade
+    );
+
+    blocoPrioridade.appendChild(
+        selectPrioridade
+    );
+
+
+    // =====================================================
+    // STATUS
+    // =====================================================
+
+    const blocoStatus =
+        document.createElement("div");
+
+    const labelStatus =
+        document.createElement("label");
+
+    labelStatus.innerHTML =
+        "<b>Status</b>";
+
+
+    const selectStatus =
+        document.createElement("select");
+
+    selectStatus.name =
+        "novo_status[]";
+
+
+    const opNaoAtendido =
+        document.createElement("option");
+
+    opNaoAtendido.value =
+        "NÃO ATENDIDO";
+
+    opNaoAtendido.textContent =
+        "Não Atendido";
+
+
+    const opParcial =
+        document.createElement("option");
+
+    opParcial.value =
+        "PARCIALMENTE";
+
+    opParcial.textContent =
+        "Parcialmente";
+
+
+    const opAtendido =
+        document.createElement("option");
+
+    opAtendido.value =
+        "ATENDIDO";
+
+    opAtendido.textContent =
+        "Atendido";
+
+
+    selectStatus.appendChild(
+        opNaoAtendido
+    );
+
+    selectStatus.appendChild(
+        opParcial
+    );
+
+    selectStatus.appendChild(
+        opAtendido
+    );
+
+
+    selectStatus.addEventListener(
+        "change",
+        function() {
+
+            atualizarLinha(
+                selectStatus
+            );
+
+        }
+    );
+
+
+    blocoStatus.appendChild(
+        labelStatus
+    );
+
+    blocoStatus.appendChild(
+        selectStatus
+    );
+
+
+    // =====================================================
+    // SECRETARIA
+    // =====================================================
+
+    const blocoSecretaria =
+        document.createElement("div");
+
+    const labelSecretaria =
+        document.createElement("label");
+
+    labelSecretaria.innerHTML =
+        "<b>Secretaria</b>";
+
+
+    const selectSecretaria =
+        document.createElement("select");
+
+    selectSecretaria.name =
+        "nova_secretaria[" + indice + "][]";
+
+    selectSecretaria.multiple =
+        true;
+
+    selectSecretaria.size =
+        5;
+
+
+    const secretarias = [
+        "CM",
+        "SEGOV",
+        "SMGAS",
+        "PGM",
+        "SMA",
+        "SMF",
+        "SME",
+        "SMCT",
+        "SMS",
+        "SEDES",
+        "SMAGRO",
+        "SEINFRA",
+        "SETTRAN",
+        "DMAE",
+        "IPREMU",
+        "FUTEL",
+        "FERUB",
+        "EMAM",
+        "CGM",
+        "SESURB",
+        "SMH",
+        "SEJUV",
+        "SECOM",
+        "SEDEI",
+        "SMGE",
+        "SEPLAN",
+        "SSEG",
+        "ARESAN",
+        "EXTERNO",
+        "OUTROS"
+    ];
+
+
+    secretarias.forEach(
+        function(nome) {
+
+            const option =
+                document.createElement("option");
+
+            option.value =
+                nome;
+
+            option.textContent =
+                nome;
+
+            selectSecretaria.appendChild(
+                option
+            );
+
+        }
+    );
+
+
+    blocoSecretaria.appendChild(
+        labelSecretaria
+    );
+
+    blocoSecretaria.appendChild(
+        selectSecretaria
+    );
+
+
+    // =====================================================
+    // EXCLUIR
+    // =====================================================
+
+    const blocoExcluir =
+        document.createElement("div");
+
+
+    const botaoExcluir =
+        document.createElement("button");
+
+    botaoExcluir.type =
+        "button";
+
+    botaoExcluir.className =
+        "btn btn-danger";
+
+    botaoExcluir.textContent =
+        "🗑";
+
+    botaoExcluir.title =
+        "Excluir recomendação";
+
+
+    botaoExcluir.addEventListener(
+        "click",
+        function() {
+
+            div.remove();
+
+        }
+    );
+
+
+    blocoExcluir.appendChild(
+        botaoExcluir
+    );
+
+
+    // =====================================================
+    // MONTAR LINHA
+    // =====================================================
+
+    div.appendChild(
+        icone
+    );
+
+    div.appendChild(
+        blocoDescricao
+    );
+
+    div.appendChild(
+        blocoPrioridade
+    );
+
+    div.appendChild(
+        blocoStatus
+    );
+
+    div.appendChild(
+        blocoSecretaria
+    );
+
+    div.appendChild(
+        blocoExcluir
+    );
+
+
+    container.appendChild(
+        div
+    );
+
+
+    // =====================================================
+    // CORES INICIAIS
+    // =====================================================
+
+    atualizarLinha(
+        selectStatus
+    );
+
+    atualizarPrioridade(
+        selectPrioridade
+    );
+}
+
+function confirmarExcluirOS(){
+
+    return confirm(
+        "ATENÇÃO! Você está prestes a apagar TODOS os dados desta O.S. " +
+        "Serão excluídas todas as recomendações, todos os monitoramentos " +
+        "e o prazo de monitoramento. A O.S será deixada do zero. " +
+        "Essa operação não poderá ser desfeita. Deseja realmente continuar?"
+    );
+
+}
+
+function confirmarExcluirMonitoramento(){
+
+    return confirm(
+        "Deseja realmente excluir este monitoramento? " +
+        "A data e a observação deste registro serão apagadas."
+    );
+
+}
+
+
+document.addEventListener(
+    "DOMContentLoaded",
+    function() {
+
+        document
+            .querySelectorAll(".rec")
+            .forEach(
+                function(linha) {
+
+                    const status =
+                        linha.querySelector(
+                            "select[name='status[]']"
+                        );
+
+                    const prioridade =
+                        linha.querySelector(
+                            "select[name='prioridade[]']"
+                        );
+
+
+                    if (status) {
+
+                        atualizarLinha(
+                            status
+                        );
+
+                    }
+
+
+                    if (prioridade) {
+
+                        atualizarPrioridade(
+                            prioridade
+                        );
+
+                    }
+
+                }
+            );
+
+
+        const modalMonitoramento =
+            document.getElementById(
+                "modalMonitoramento"
+            );
+
+
+        if (modalMonitoramento) {
+
+            modalMonitoramento.addEventListener(
+                "click",
+                function(event) {
+
+                    if (
+                        event.target ===
+                        modalMonitoramento
+                    ) {
+                        fecharMonitoramento();
+                    }
+
+                }
+            );
+
+        }
+
+
+        const modalHistorico =
+            document.getElementById(
+                "modalHistorico"
+            );
+
+
+        if (modalHistorico) {
+
+            modalHistorico.addEventListener(
+                "click",
+                function(event) {
+
+                    if (
+                        event.target ===
+                        modalHistorico
+                    ) {
+                        fecharHistorico();
+                    }
+
+                }
+            );
+
+        }
+
+    }
+);
+
+</script>
+
+{% endif %}
+"""
+
+    return render_template_string(
+        BASE.replace(
+            "{% block content %}{% endblock %}",
+            html
+        ),
+        os_codigo=os_codigo,
+        os_resumo=os_resumo,
+        os_cadastradas=os_cadastradas,
+        colaboradores=colaboradores,
+        recomendacoes=recomendacoes,
+        monitoramento=monitoramento,
+        monitoramentos=monitoramentos,
+        total=total,
+        atendidas=atendidas,
+        parcialmente=parcialmente,
+        nao_atendidas=nao_atendidas,
+        percentual=percentual,
+        user=session['user'],
+        perfil=session['perfil']
+    )
+
+@app.route('/recomendacoes/listar')
+def listar_recomendacoes():
+
+    if 'user' not in session:
+        return redirect('/')
+
+    # =========================================================
+    # CONEXÃO
+    # =========================================================
+
+    con = get_db()
+    cur = con.cursor()
+
+    # =========================================================
+    # FILTROS
+    # =========================================================
+
+    status_filtro = request.args.get("status", "").strip()
+    busca = request.args.get("busca", "").strip()
+
+    where = []
+    params = []
+
+    if status_filtro:
+
+        where.append("""
+            r.status = %s
+        """)
+
+        params.append(status_filtro)
+
+    if busca:
+
+        where.append("""
+            (
+                r.os_codigo ILIKE %s
+                OR r.resumo_os ILIKE %s
+                OR o.codigo ILIKE %s
+                OR o.resumo ILIKE %s
+                OR o.unidade ILIKE %s
+                OR o.uo ILIKE %s
+                OR r.descricao ILIKE %s
+                OR r.status ILIKE %s
+                OR r.prioridade ILIKE %s
+                OR r.secretaria ILIKE %s
+                OR mc.coordenador ILIKE %s
+            )
+        """)
+
+        texto = f"%{busca}%"
+
+        params.extend([
+            texto,  # os_codigo
+            texto,  # resumo_os
+            texto,  # codigo os
+            texto,  # resumo os
+            texto,  # unidade
+            texto,  # uo
+            texto,  # recomendacao
+            texto,  # status
+            texto,  # prioridade
+            texto,  # secretaria / órgão
+            texto   # coordenador
+        ])
+
+    sql_where = ""
+
+    if where:
+        sql_where = "WHERE " + " AND ".join(where)
+
+    # =========================================================
+    # CONSULTA
+    # =========================================================
+
+    cur.execute(f"""
+        SELECT
+            r.id,
+            r.os_codigo,
+
+            COALESCE(
+                NULLIF(r.resumo_os, ''),
+                o.resumo,
+                ''
+            ) AS resumo,
+
+            COALESCE(
+                mc.coordenador,
+                ''
+            ) AS coordenador,
+
+            COALESCE(
+                r.secretaria,
+                ''
+            ) AS orgao_entidade,
+
+            r.descricao AS recomendacao,
+            r.status,
+            r.prioridade,
+            mc.prazo_monitoramento
+
+        FROM recomendacoes r
+
+        LEFT JOIN os o
+            ON o.codigo = r.os_codigo
+
+        LEFT JOIN recomendacao_monitoramento_config mc
+            ON mc.os_codigo = r.os_codigo
+
+        {sql_where}
+
+        ORDER BY
+
+            CASE
+                WHEN r.os_codigo ~ '/[0-9]{4}$'
+                THEN split_part(r.os_codigo, '/', 2)::int
+                ELSE 0
+            END DESC,
+
+            r.os_codigo DESC,
+            r.id ASC
+
+    """, params)
+
+    rows = cur.fetchall()
+
+    con.close()
+
+    # =========================================================
+    # HTML
+    # =========================================================
+
+    html = """
+<style>
+
+.lista-card{
+    background:white;
+    border-radius:16px;
+    padding:20px;
+    box-shadow:0 6px 20px rgba(0,0,0,.08);
+}
+
+.lista-topo{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:15px;
+    margin-bottom:20px;
+    flex-wrap:wrap;
+}
+
+.lista-titulo{
+    font-size:24px;
+    font-weight:700;
+    color:#1f2937;
+}
+
+.btn{
+    border:none;
+    padding:10px 15px;
+    border-radius:9px;
+    text-decoration:none;
+    cursor:pointer;
+    font-weight:600;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+}
+
+.btn-blue{
+    background:#2563eb;
+    color:white !important;
+}
+
+.btn-green{
+    background:#16a34a;
+    color:white !important;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th{
+    background:#1e3a8a;
+    color:white;
+    padding:11px;
+    font-size:13px;
+    text-align:left;
+}
+
+td{
+    padding:10px;
+    border-bottom:1px solid #e5e7eb;
+    font-size:13px;
+    vertical-align:middle;
+}
+
+tr:hover{
+    background:#f8fafc;
+}
+
+.status{
+    padding:6px 10px;
+    border-radius:20px;
+    font-weight:700;
+    display:inline-block;
+}
+
+.status-atendido{
+    background:#dcfce7;
+    color:#166534;
+}
+
+.status-parcial{
+    background:#fef9c3;
+    color:#854d0e;
+}
+
+.status-nao{
+    background:#fee2e2;
+    color:#991b1b;
+}
+
+.prioridade{
+    padding:6px 10px;
+    border-radius:20px;
+    font-weight:700;
+    display:inline-block;
+}
+
+.prio-baixo{
+    background:#dcfce7;
+    color:#166534;
+}
+
+.prio-medio{
+    background:#fef9c3;
+    color:#854d0e;
+}
+
+.prio-alto{
+    background:#fed7aa;
+    color:#9a3412;
+}
+
+.prio-extremo{
+    background:#111827;
+    color:white;
+}
+
+.btn-monitor{
+    width:36px;
+    height:36px;
+    border:none;
+    border-radius:50%;
+    background:#7c3aed;
+    color:white;
+    cursor:pointer;
+    font-size:18px;
+}
+
+.modal{
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.5);
+    z-index:99999;
+    align-items:center;
+    justify-content:center;
+}
+
+.modal-box{
+    background:white;
+    width:min(700px,92%);
+    max-height:80vh;
+    overflow:auto;
+    border-radius:16px;
+    padding:22px;
+    box-shadow:0 20px 50px rgba(0,0,0,.3);
+}
+
+.monitor-item{
+    background:#f5f3ff;
+    border-left:5px solid #7c3aed;
+    border-radius:8px;
+    padding:14px;
+    margin-bottom:10px;
+}
+
+.filtro-box{
+    display:flex;
+    gap:10px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+    align-items:center;
+}
+
+.filtro-box input{
+    flex:1;
+    min-width:300px;
+    padding:10px 14px;
+    border:1px solid #d1d5db;
+    border-radius:9px;
+}
+
+.filtro-box select{
+    width:220px;
+    padding:10px;
+    border:1px solid #d1d5db;
+    border-radius:9px;
+}
+
+</style>
+
+
+<div class="lista-card">
+
+    <div class="lista-topo">
+
+        <div>
+            <div class="lista-titulo">
+                📋 Recomendações de Auditoria
+            </div>
+
+            <div style="color:#64748b;margin-top:5px;">
+                Todas as recomendações cadastradas
+            </div>
+        </div>
+
+        <div style="
+            display:flex;
+            gap:10px;
+            flex-wrap:wrap;
+        ">
+
+            <a
+                href="/recomendacoes"
+                class="btn btn-blue"
+            >
+                ➕ Nova / Consultar
+            </a>
+
+            <a
+                id="btnExcel"
+                href="/recomendacoes/export"
+                class="btn btn-green"
+            >
+                📊 Excel
+            </a>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- FILTROS -->
+    <!-- ================================================= -->
+
+    <div class="filtro-box">
+
+        <input
+            type="text"
+            id="busca"
+            value="{{ request.args.get('busca','') }}"
+            placeholder="🔎 Pesquisar O.S, resumo, coordenador, órgão/entidade, recomendação..."
+            onkeydown="if(event.key==='Enter') pesquisarTabela()"
+        >
+
+        <select
+            id="filtroStatus"
+            onchange="pesquisarTabela()"
+        >
+
+            <option
+                value=""
+                {% if not request.args.get('status') %}
+                    selected
+                {% endif %}
+            >
+                Todos os status
+            </option>
+
+            <option
+                value="ATENDIDO"
+                {% if request.args.get('status') == 'ATENDIDO' %}
+                    selected
+                {% endif %}
+            >
+                🟢 Atendido
+            </option>
+
+            <option
+                value="PARCIALMENTE"
+                {% if request.args.get('status') == 'PARCIALMENTE' %}
+                    selected
+                {% endif %}
+            >
+                🟡 Parcialmente
+            </option>
+
+            <option
+                value="NÃO ATENDIDO"
+                {% if request.args.get('status') == 'NÃO ATENDIDO' %}
+                    selected
+                {% endif %}
+            >
+                🔴 Não Atendido
+            </option>
+
+        </select>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- TABELA -->
+    <!-- ================================================= -->
+
+    <div style="overflow:auto;">
+
+        <table>
+
+            <thead>
+
+                <tr>
+                    <th>O.S</th>
+                    <th>Resumo</th>
+                    <th>Coordenador</th>
+                    <th>Órgão/Entidade</th>
+                    <th>Recomendação</th>
+                    <th>Status</th>
+                    <th>Prioridade</th>
+                    <th>Prazo</th>
+                    <th style="width:60px;">Ação</th>
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+            {% for r in rows %}
+
+                <tr>
+
+                    <td>
+                        <b>{{ r.os_codigo }}</b>
+                    </td>
+
+                    <td>
+                        {{ r.resumo or '-' }}
+                    </td>
+
+                    <td>
+                        {{ r.coordenador or '-' }}
+                    </td>
+
+                    <td>
+                        {{ r.orgao_entidade or '-' }}
+                    </td>
+
+                    <td>
+                        {{ r.recomendacao }}
+                    </td>
+
+                    <td>
+
+                        {% if r.status == 'ATENDIDO' %}
+
+                            <span class="status status-atendido">
+                                ✓ Atendido
+                            </span>
+
+                        {% elif r.status == 'PARCIALMENTE' %}
+
+                            <span class="status status-parcial">
+                                ◐ Parcialmente
+                            </span>
+
+                        {% else %}
+
+                            <span class="status status-nao">
+                                ✕ Não Atendido
+                            </span>
+
+                        {% endif %}
+
+                    </td>
+
+                    <td>
+
+                        {% if r.prioridade == 'BAIXO' %}
+
+                            <span class="prioridade prio-baixo">
+                                Baixo
+                            </span>
+
+                        {% elif r.prioridade == 'MÉDIO' %}
+
+                            <span class="prioridade prio-medio">
+                                Médio
+                            </span>
+
+                        {% elif r.prioridade == 'ALTO' %}
+
+                            <span class="prioridade prio-alto">
+                                Alto
+                            </span>
+
+                        {% else %}
+
+                            <span class="prioridade prio-extremo">
+                                Extremo
+                            </span>
+
+                        {% endif %}
+
+                    </td>
+
+                    <td>
+
+                        {% if r.prazo_monitoramento %}
+                            {{ r.prazo_monitoramento.strftime('%d/%m/%Y') }}
+                        {% else %}
+                            -
+                        {% endif %}
+
+                    </td>
+
+                    <td style="text-align:center;">
+
+                        <button
+                            type="button"
+                            class="btn-monitor"
+                            onclick="abrirMonitoramento('{{ r.os_codigo|e }}')"
+                            title="Ver monitoramentos da O.S"
+                        >
+                            +
+                        </button>
+
+                    </td>
+
+                </tr>
+
+            {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+
+<!-- ===================================================== -->
+<!-- MODAL -->
+<!-- ===================================================== -->
+
+<div
+    id="modalMonitoramento"
+    class="modal"
+    onclick="fecharFora(event)"
+>
+
+    <div class="modal-box">
+
+        <div style="
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+        ">
+
+            <h3>
+                📅 Histórico de Monitoramentos
+            </h3>
+
+            <button
+                type="button"
+                class="btn btn-blue"
+                onclick="fecharMonitoramento()"
+            >
+                Fechar
+            </button>
+
+        </div>
+
+        <div id="conteudoMonitoramento">
+            Carregando...
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+function pesquisarTabela(){
+
+    const busca =
+        document.getElementById("busca").value;
+
+    const status =
+        document.getElementById("filtroStatus").value;
+
+    const params =
+        new URLSearchParams();
+
+    if(busca){
+        params.set("busca", busca);
+    }
+
+    if(status){
+        params.set("status", status);
+    }
+
+    window.location.href =
+        "/recomendacoes/listar?" +
+        params.toString();
+}
+
+
+function atualizarExcel(){
+
+    const params =
+        new URLSearchParams();
+
+    const busca =
+        document.getElementById("busca").value;
+
+    const status =
+        document.getElementById("filtroStatus").value;
+
+    if(busca){
+        params.set("busca", busca);
+    }
+
+    if(status){
+        params.set("status", status);
+    }
+
+    document.getElementById("btnExcel").href =
+        "/recomendacoes/export?" +
+        params.toString();
+}
+
+
+function abrirMonitoramento(os){
+
+    const modal =
+        document.getElementById(
+            "modalMonitoramento"
+        );
+
+    const conteudo =
+        document.getElementById(
+            "conteudoMonitoramento"
+        );
+
+    if(!modal || !conteudo){
+        return;
+    }
+
+    modal.style.display = "flex";
+
+    conteudo.innerHTML =
+        "Carregando...";
+
+    fetch(
+        "/recomendacoes/monitoramentos/" +
+        encodeURIComponent(os)
+    )
+    .then(r => r.json())
+    .then(dados => {
+
+        if(!dados.length){
+
+            conteudo.innerHTML = `
+                <div style="
+                    padding:25px;
+                    text-align:center;
+                    color:#64748b;
+                ">
+                    Nenhum monitoramento registrado
+                    para esta O.S.
+                </div>
+            `;
+
+            return;
+        }
+
+        conteudo.innerHTML =
+            dados.map(m => `
+
+                <div class="monitor-item">
+
+                    <div>
+                        <b>📅 ${m.data}</b>
+                    </div>
+
+                    <div style="
+                        margin-top:8px;
+                        white-space:pre-wrap;
+                    ">
+                        ${m.observacao || "Sem observações."}
+                    </div>
+
+                    <div style="
+                        margin-top:8px;
+                        font-size:13px;
+                        color:#64748b;
+                    ">
+                        👤 Registrado por:
+                        <b>
+                            ${m.colaborador || "Não identificado"}
+                        </b>
+                    </div>
+
+                </div>
+
+            `).join("");
+
+    })
+    .catch(() => {
+
+        conteudo.innerHTML = `
+            <div style="
+                color:#dc2626;
+                padding:20px;
+            ">
+                Erro ao carregar os monitoramentos.
+            </div>
+        `;
+
+    });
+}
+
+
+function fecharMonitoramento(){
+
+    const modal =
+        document.getElementById(
+            "modalMonitoramento"
+        );
+
+    if(modal){
+        modal.style.display = "none";
+    }
+
+}
+
+
+function fecharFora(e){
+
+    const modal =
+        document.getElementById(
+            "modalMonitoramento"
+        );
+
+    if(
+        modal &&
+        e.target === modal
+    ){
+        fecharMonitoramento();
+    }
+
+}
+
+
+document.addEventListener(
+    "DOMContentLoaded",
+    function(){
+
+        atualizarExcel();
+
+    }
+);
+
+</script>
+"""
+
+    return render_template_string(
+        BASE.replace(
+            "{% block content %}{% endblock %}",
+            html
+        ),
+        rows=rows,
+        request=request,
+        user=session['user'],
+        perfil=session['perfil']
+    )
+
+@app.route('/recomendacoes/monitoramentos/<path:os_codigo>')
+def recomendacoes_monitoramentos(os_codigo):
+
+    if 'user' not in session:
+        return jsonify([])
+
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("""
+        SELECT
+            rm.data_monitoramento,
+            rm.observacao,
+            c.nome AS colaborador
+
+        FROM recomendacao_monitoramentos rm
+
+        LEFT JOIN colaboradores c
+            ON c.id = rm.servidor_id
+
+        WHERE rm.os_codigo = %s
+
+        ORDER BY
+            rm.data_monitoramento DESC,
+            rm.id DESC
+    """, (os_codigo,))
+
+    rows = cur.fetchall()
+
+    con.close()
+
+    resultado = []
+
+    for r in rows:
+
+        resultado.append({
+            "data": (
+                r["data_monitoramento"].strftime("%d/%m/%Y")
+                if r["data_monitoramento"]
+                else ""
+            ),
+            "observacao": r["observacao"] or "",
+            "colaborador": r["colaborador"] or ""
+        })
+
+    return jsonify(resultado)
+
+@app.route('/recomendacoes/export')
+def recomendacoes_export():
+
+    if 'user' not in session:
+        return redirect('/')
+
+    import io
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    from flask import send_file
+
+    con = get_db()
+    cur = con.cursor()
+
+    # =========================================================
+    # FILTROS RECEBIDOS DA TELA
+    # =========================================================
+
+    status_filtro = request.args.get("status", "").strip()
+    busca = request.args.get("busca", "").strip()
+
+    where = []
+    params = []
+
+    # =========================================================
+    # FILTRO STATUS
+    # =========================================================
+
+    if status_filtro:
+
+        where.append("""
+            r.status = %s
+        """)
+
+        params.append(status_filtro)
+
+    # =========================================================
+    # PESQUISA GERAL
+    # =========================================================
+
+    if busca:
+
+        where.append("""
+            (
+                r.os_codigo ILIKE %s
+                OR r.resumo_os ILIKE %s
+                OR o.codigo ILIKE %s
+                OR o.resumo ILIKE %s
+                OR o.unidade ILIKE %s
+                OR o.uo ILIKE %s
+                OR r.descricao ILIKE %s
+                OR r.status ILIKE %s
+                OR r.prioridade ILIKE %s
+                OR r.secretaria ILIKE %s
+                OR mc.coordenador ILIKE %s
+            )
+        """)
+
+        texto = f"%{busca}%"
+
+        params.extend([
+            texto,  # O.S
+            texto,  # resumo
+            texto,  # código O.S
+            texto,  # resumo O.S
+            texto,  # unidade
+            texto,  # uo
+            texto,  # recomendação
+            texto,  # status
+            texto,  # prioridade
+            texto,  # órgão/entidade
+            texto   # coordenador
+        ])
+
+    # =========================================================
+    # WHERE
+    # =========================================================
+
+    sql_where = ""
+
+    if where:
+        sql_where = "WHERE " + " AND ".join(where)
+
+    # =========================================================
+    # CONSULTA
+    # =========================================================
+
+    cur.execute(f"""
+        SELECT
+
+            r.os_codigo,
+
+            COALESCE(
+                NULLIF(r.resumo_os, ''),
+                o.resumo,
+                ''
+            ) AS resumo,
+
+            COALESCE(
+                mc.coordenador,
+                ''
+            ) AS coordenador,
+
+            COALESCE(
+                r.secretaria,
+                ''
+            ) AS orgao_entidade,
+            r.descricao AS recomendacao,
+            r.status,
+            r.prioridade,
+            mc.prazo_monitoramento
+
+        FROM recomendacoes r
+
+        LEFT JOIN os o
+            ON o.codigo = r.os_codigo
+
+        LEFT JOIN recomendacao_monitoramento_config mc
+            ON mc.os_codigo = r.os_codigo
+
+        {sql_where}
+
+        ORDER BY
+            CASE
+                WHEN r.os_codigo ~ '/[0-9]{4}$'
+                THEN split_part(r.os_codigo, '/', 2)::int
+                ELSE 0
+            END DESC,
+            r.os_codigo DESC,
+            r.id ASC
+
+    """, params)
+
+    rows = cur.fetchall()
+
+    con.close()
+
+    # =========================================================
+    # CRIAR EXCEL
+    # =========================================================
+
+    wb = Workbook()
+
+    ws = wb.active
+    ws.title = "Recomendações"
+
+    # =========================================================
+    # CABEÇALHO
+    # =========================================================
+
+    cabecalho = [
+        "O.S",
+        "Resumo",
+        "Coordenador",
+        "Órgão/Entidade",
+        "Recomendação",
+        "Status",
+        "Prioridade",
+        "Data Prazo"
+    ]
+
+    ws.append(cabecalho)
+
+    # =========================================================
+    # ESTILO CABEÇALHO
+    # =========================================================
+
+    for cell in ws[1]:
+
+        cell.font = Font(
+            bold=True,
+            color="FFFFFF"
+        )
+
+        cell.fill = PatternFill(
+            fill_type="solid",
+            fgColor="1E3A8A"
+        )
+
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center"
+        )
+
+    # =========================================================
+    # DADOS
+    # =========================================================
+
+    for r in rows:
+
+        ws.append([
+            r["os_codigo"] or "",
+            r["resumo"] or "",
+            r["coordenador"] or "",
+            r["orgao_entidade"] or "",
+            r["recomendacao"] or "",
+            r["status"] or "",
+            r["prioridade"] or "",
+
+            (
+                r["prazo_monitoramento"].strftime("%d/%m/%Y")
+                if r["prazo_monitoramento"]
+                else ""
+            )
+
+        ])
+
+    # =========================================================
+    # CORES DOS STATUS / PRIORIDADE
+    # =========================================================
+
+    for row in ws.iter_rows(
+        min_row=2,
+        max_row=ws.max_row
+    ):
+
+        status = row[5].value
+        prioridade = row[6].value
+
+        # -----------------------------------------------------
+        # STATUS
+        # -----------------------------------------------------
+
+        if status == "ATENDIDO":
+
+            row[5].fill = PatternFill(
+                fill_type="solid",
+                fgColor="DCFCE7"
+            )
+
+            row[5].font = Font(
+                bold=True,
+                color="166534"
+            )
+
+        elif status == "PARCIALMENTE":
+
+            row[5].fill = PatternFill(
+                fill_type="solid",
+                fgColor="FEF9C3"
+            )
+
+            row[5].font = Font(
+                bold=True,
+                color="854D0E"
+            )
+
+        elif status == "NÃO ATENDIDO":
+
+            row[5].fill = PatternFill(
+                fill_type="solid",
+                fgColor="FEE2E2"
+            )
+
+            row[5].font = Font(
+                bold=True,
+                color="991B1B"
+            )
+
+        # -----------------------------------------------------
+        # PRIORIDADE
+        # -----------------------------------------------------
+
+        if prioridade == "BAIXO":
+
+            row[6].fill = PatternFill(
+                fill_type="solid",
+                fgColor="DCFCE7"
+            )
+
+            row[6].font = Font(
+                bold=True,
+                color="166534"
+            )
+
+        elif prioridade == "MÉDIO":
+
+            row[6].fill = PatternFill(
+                fill_type="solid",
+                fgColor="FEF9C3"
+            )
+
+            row[6].font = Font(
+                bold=True,
+                color="854D0E"
+            )
+
+        elif prioridade == "ALTO":
+
+            row[6].fill = PatternFill(
+                fill_type="solid",
+                fgColor="FED7AA"
+            )
+
+            row[6].font = Font(
+                bold=True,
+                color="9A3412"
+            )
+
+        elif prioridade == "EXTREMO":
+
+            row[6].fill = PatternFill(
+                fill_type="solid",
+                fgColor="111827"
+            )
+
+            row[6].font = Font(
+                bold=True,
+                color="FFFFFF"
+            )
+
+    # =========================================================
+    # ALINHAMENTO
+    # =========================================================
+
+    for row in ws.iter_rows():
+
+        for cell in row:
+
+            cell.alignment = Alignment(
+                vertical="top",
+                wrap_text=True
+            )
+
+    # =========================================================
+    # LARGURAS
+    # =========================================================
+
+    larguras = [
+        16,   # O.S
+        45,   # Resumo
+        35,   # Coordenador
+        25,   # Órgão/Entidade
+        80,   # Recomendação
+        20,   # Status
+        15,   # Prioridade
+        18    # Data Prazo
+    ]
+
+    for i, largura in enumerate(
+        larguras,
+        start=1
+    ):
+
+        ws.column_dimensions[
+            get_column_letter(i)
+        ].width = largura
+
+    # =========================================================
+    # CONGELAR CABEÇALHO
+    # =========================================================
+    ws.freeze_panes = "A2"
+
+    # =========================================================
+    # FILTRO AUTOMÁTICO
+    # =========================================================
+    if ws.max_row >= 2:
+
+        ws.auto_filter.ref = (
+            f"A1:H{ws.max_row}"
+        )
+
+    # =========================================================
+    # ALTURA DO CABEÇALHO
+    # =========================================================
+    ws.row_dimensions[1].height = 25
+
+    # =========================================================
+    # GERAR ARQUIVO
+    # =========================================================
+    arquivo = io.BytesIO()
+    wb.save(arquivo)
+    arquivo.seek(0)
+
+    # =========================================================
+    # NOME DO ARQUIVO
+    # =========================================================
+
+    nome_arquivo = "recomendacoes_auditoria"
+
+    if status_filtro:
+
+        nome_arquivo += (
+            "_" +
+            status_filtro
+            .lower()
+            .replace(" ", "_")
+            .replace("ã", "a")
+            .replace("ç", "c")
+        )
+
+    if busca:
+        nome_busca = (
+            busca
+            .replace(" ", "_")
+            .replace("/", "-")
+        )
+        nome_arquivo += "_" + nome_busca
+    nome_arquivo += ".xlsx"
+
+    # =========================================================
+    # DOWNLOAD
+    # =========================================================
+
+    return send_file(
+        arquivo,
+        as_attachment=True,
+        download_name=nome_arquivo,
+        mimetype=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        )
+    )
 
 @app.route("/api/<tabela>")
 def api_tabela(tabela):
