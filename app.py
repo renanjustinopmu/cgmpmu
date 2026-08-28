@@ -14,8 +14,8 @@ import os
 import psycopg2
 import psycopg2.extras
 from psycopg2 import IntegrityError
-
 from datetime import datetime
+from urllib.parse import quote
 
 import requests
 
