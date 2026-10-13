@@ -8282,22 +8282,32 @@ def requisicoes():
                     cur.execute("""
                         UPDATE requisicoes
                         SET
-                            status_analise = NULLIF(%s,''),
-                            tipo = NULLIF(%s,''),
-                            criterio = NULLIF(%s,''),
-                            servidor_id = NULLIF(%s,'')::INTEGER,
-                            nota = NULLIF(%s,''),
-                            num_nota = NULLIF(%s,''),
-                            oficio = NULLIF(%s,''),
-                            monitoramento = NULLIF(%s,''),
-                            monitoramento_resposta = NULLIF(%s,''),
-                            observacoes = NULLIF(%s,'')
+                            status_analise = NULLIF(%s, ''),
+                            tipo = NULLIF(%s, ''),
+                            criterio = NULLIF(%s, ''),
+                    
+                            data_inicio = CASE
+                                WHEN NULLIF(%s, '') IS NOT NULL
+                                     AND requisicoes.data_inicio IS NULL
+                                THEN (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                                ELSE requisicoes.data_inicio
+                            END,
+                    
+                            servidor_id = NULLIF(%s, '')::INTEGER,
+                            nota = NULLIF(%s, ''),
+                            num_nota = NULLIF(%s, ''),
+                            oficio = NULLIF(%s, ''),
+                            monitoramento = NULLIF(%s, ''),
+                            monitoramento_resposta = NULLIF(%s, ''),
+                            observacoes = NULLIF(%s, '')
+                    
                         WHERE id = %s
                     """, (
                         status,
                         tipo,
                         criterio,
-                        servidor_id,
+                        servidor_id,  # Verifica se há responsável selecionado
+                        servidor_id,  # Grava o responsável
                         nota,
                         num_nota,
                         oficio,
@@ -8584,7 +8594,7 @@ def requisicoes():
             </td>
 
             <td>
-                <select onchange="salvar({{ r.id }})" id="servidor_{{ r.id }}">
+                <select onchange="salvar({{ r.id }}, true)" id="servidor_{{ r.id }}">
                     <option value=""></option>
                     {% for col in colaboradores %}
                         <option value="{{ col.id }}" {% if r.servidor_id==col.id %}selected{% endif %}>
@@ -8595,9 +8605,12 @@ def requisicoes():
             </td>
 
             <td>
-                <input type="date"
-                       value="{{ r.data_inicio if r.data_inicio else '' }}"
-                       onchange="atualizarCampo({{ r.id }}, 'data_inicio', this.value)">
+                <input
+                    type="date"
+                    id="data_inicio_{{ r.id }}"
+                    value="{{ r.data_inicio if r.data_inicio else '' }}"
+                    onchange="atualizarCampo({{ r.id }}, 'data_inicio', this.value)"
+                >
 
             </td>
 
@@ -8656,32 +8669,99 @@ def requisicoes():
     </div>
     <script>
 
-    function salvar(id){
-        let fd = new FormData();
-        fd.append("acao","atualizar");
-        fd.append("id",id);
-        fd.append("status_analise", document.getElementById("status_"+id).value);
-        fd.append("tipo", document.getElementById("tipo_"+id).value);
-        fd.append("criterio", document.getElementById("criterio_"+id).value);
-        fd.append("servidor_id", document.getElementById("servidor_"+id).value);
+    const podeAtribuirResponsavel =
+    {% if perfil == 'admin' %}true{% else %}false{% endif %};
 
-        fd.append("nota", document.getElementById("nota_"+id).value);
-        fd.append("num_nota", document.getElementById("num_nota_"+id).value);
-        fd.append("oficio", document.getElementById("oficio_"+id).value);
-        fd.append("monitoramento", document.getElementById("monitoramento_"+id).value);
-
-        fetch("/requisicoes", { method:"POST", body: fd })
-            .then(r => r.text())
-            .then(resp => {
-                if (resp !== "OK") {
-                    alert("Erro ao salvar");
-                    console.error(resp);
+    function salvar(id, responsavelAlterado = false) {    
+        const fd = new FormData();
+        fd.append("acao", "atualizar");
+        fd.append("id", id);
+        fd.append(
+            "status_analise",
+            document.getElementById("status_" + id).value
+        );
+        fd.append(
+            "tipo",
+            document.getElementById("tipo_" + id).value
+        );
+        fd.append(
+            "criterio",
+            document.getElementById("criterio_" + id).value
+        );
+        fd.append(
+            "servidor_id",
+            document.getElementById("servidor_" + id).value
+        );
+        fd.append(
+            "nota",
+            document.getElementById("nota_" + id).value
+        );
+        fd.append(
+            "num_nota",
+            document.getElementById("num_nota_" + id).value
+        );
+        fd.append(
+            "oficio",
+            document.getElementById("oficio_" + id).value
+        );
+        fd.append(
+            "monitoramento",
+            document.getElementById("monitoramento_" + id).value
+        );
+        fetch("/requisicoes", {
+            method: "POST",
+            body: fd
+        })
+        .then(response => response.text())
+        .then(resp => {
+    
+            if (resp !== "OK") {
+                alert("Erro ao salvar");
+                console.error(resp);
+                return;
+            }
+    
+            // Preencher a data na tela após atribuir o responsável.
+            if (
+                responsavelAlterado &&
+                podeAtribuirResponsavel
+            ) {
+    
+                const responsavel =
+                    document.getElementById("servidor_" + id);
+    
+                const campoInicio =
+                    document.getElementById("data_inicio_" + id);
+    
+                if (
+                    responsavel &&
+                    responsavel.value &&
+                    campoInicio &&
+                    !campoInicio.value
+                ) {
+    
+                    const agora = new Date();
+    
+                    const ano = agora.getFullYear();
+    
+                    const mes = String(
+                        agora.getMonth() + 1
+                    ).padStart(2, "0");
+    
+                    const dia = String(
+                        agora.getDate()
+                    ).padStart(2, "0");
+    
+                    campoInicio.value =
+                        `${ano}-${mes}-${dia}`;
                 }
-            })
-            .catch(err => {
-                alert("Erro de rede");
-                console.error(err);
-            });
+            }
+    
+        })
+        .catch(err => {
+            alert("Erro de rede");
+            console.error(err);
+        });
     }
 
     function excluir(id){
