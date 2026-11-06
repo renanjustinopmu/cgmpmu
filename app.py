@@ -6491,7 +6491,7 @@ tr.analisado td:first-child::before {
     </colgroup>
     <tr>
         <th>Chave</th>
-        <th>Despacho</th>
+        <th>Atribuído</th>
         <th>Status</th>
         <th>Tipo</th>
         <th>Critério</th>
