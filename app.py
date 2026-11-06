@@ -16,6 +16,7 @@ import psycopg2.extras
 from psycopg2 import IntegrityError
 from datetime import datetime
 from urllib.parse import quote
+from urllib.parse import urlencode
 
 import requests
 
@@ -6241,51 +6242,108 @@ def minhas_delegacoes():
 <h2>Minhas Requisições Delegadas</h2>
 
 <style>
-tr.andamento {
-    background-color: #ffe5e5; /* vermelho claro */
-    
+/* ================= CORES DOS STATUS ================= */
+
+tr.andamento td {
+    background-color: #ffe5e5;
 }
 
-tr.analisando {
-    background-color: #fff7cc; /* amarelo claro */
+tr.analisando td {
+    background-color: #fff7cc;
 }
 
-tr.analisado {
-    background-color: #e5ffe5; /* verde claro */
+tr.analisado td {
+    background-color: #e5ffe5;
 }
+
+/* Indicadores na chave */
 tr.andamento td:first-child::before {
-    content:"🔴 ";
+    content: "🔴 ";
 }
+
 tr.analisando td:first-child::before {
-    content:"🟡 ";
+    content: "🟡 ";
 }
+
 tr.analisado td:first-child::before {
-    content:"🟢 ";
+    content: "🟢 ";
 }
 
+/* ================= BOTÕES DE FILTRO ================= */
 
-/* Botões */
-.btn.andamento { background:#d9534f; color:#fff }
-.btn.analisando { background:#f0ad4e; color:#000 }
-.btn.analisado { background:#5cb85c; color:#fff }
-.btn.all { background:#0275d8; color:#fff }
-.btn.ativo {
-    outline: 3px solid #000;
-    transform: scale(1.05);
+.btn.andamento {
+    background: #d9534f;
+    color: #fff;
+}
+
+.btn.analisando {
+    background: #f0ad4e;
+    color: #000;
+}
+
+.btn.analisado {
+    background: #5cb85c;
+    color: #fff;
+}
+
+.btn.all {
+    background: #0275d8;
+    color: #fff;
+}
+
+.delegacoes-filtros .btn.ativo {
+    outline: 2px solid #000;
     font-weight: bold;
 }
 
-/* ================= RESPONSIVIDADE ================= */
+/* ================= FILTROS ================= */
 
-.table-container {
-    overflow-x: auto;
-    margin-top: 10px;
+.delegacoes-filtros {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
 }
 
-/* Largura mínima para evitar esmagamento */
+.delegacoes-filtros input {
+    flex: 1 1 260px;
+    min-width: 220px;
+    max-width: 100%;
+    width: auto;
+    box-sizing: border-box;
+    padding: 9px 11px;
+    height: 38px;
+}
+
+/* ================= TABELA ================= */
+
+.table-container {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: auto;
+    margin-top: 10px;
+    border: 1px solid #e2e5e9;
+    border-radius: 8px;
+}
+
 .tabela-delegacoes {
-    min-width: 1350px;
-    border-collapse: collapse;
+    width: 1380px;
+    min-width: 1380px;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+/* Células */
+.tabela-delegacoes th,
+.tabela-delegacoes td {
+    box-sizing: border-box;
+    padding: 8px 7px;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: middle;
+    text-align: left;
 }
 
 /* Cabeçalho fixo */
@@ -6293,50 +6351,121 @@ tr.analisado td:first-child::before {
     position: sticky;
     top: 0;
     background: #dce8fb;
-    z-index: 2;
+    z-index: 4;
+    white-space: nowrap;
+    height: 42px;
 }
 
-/* Primeira coluna congelada e negrito */
+/* Primeira coluna congelada */
 .tabela-delegacoes th:first-child,
 .tabela-delegacoes td:first-child {
     position: sticky;
     left: 0;
-    background: #fff;
-    font-weight: bold;
     z-index: 3;
+    font-weight: bold;
 }
 
-/* Ajustes específicos de largura */
-.tabela-delegacoes th:nth-child(3),
-.tabela-delegacoes td:nth-child(3) {
-    min-width: 130px; /* Status maior */
+/* Cabeçalho da primeira coluna acima das demais */
+.tabela-delegacoes th:first-child {
+    z-index: 6;
+    background: #dce8fb;
 }
 
-.tabela-delegacoes th:nth-child(6),
-.tabela-delegacoes td:nth-child(6) {
-    min-width: 90px; /* Nota um pouco maior */
+/* Preserva as cores dos status na coluna congelada */
+.tabela-delegacoes tr.andamento td:first-child {
+    background: #ffe5e5;
 }
 
-.tabela-delegacoes th:nth-child(10),
-.tabela-delegacoes td:nth-child(10) {
-    max-width: 180px; /* Resposta menor */
+.tabela-delegacoes tr.analisando td:first-child {
+    background: #fff7cc;
 }
 
-.tabela-delegacoes th:nth-child(11),
-.tabela-delegacoes td:nth-child(11) {
-    max-width: 180px; /* Obs menor */
+.tabela-delegacoes tr.analisado td:first-child {
+    background: #e5ffe5;
 }
 
-/* Evita quebra feia */
+/* Evita conteúdo invadindo outras colunas */
 .tabela-delegacoes td {
+    overflow: hidden;
+}
+
+.tabela-delegacoes td:nth-child(1),
+.tabela-delegacoes td:nth-child(4),
+.tabela-delegacoes td:nth-child(5) {
     white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* ================= CAMPOS INLINE ================= */
+
+.tabela-delegacoes input,
+.tabela-delegacoes select {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: 34px;
+    box-sizing: border-box;
+    padding: 5px 7px;
+    font-size: 13px;
+    margin: 0;
+}
+
+/* ================= AÇÕES ================= */
+
+.acoes-delegacao {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.acao-icone {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 7px;
+    background: #f1f3f5;
+    text-decoration: none;
+    font-size: 17px;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.acao-icone:hover {
+    background: #e2e6ea;
+}
+
+.acao-pdf {
+    background: #fde8e7;
+}
+
+.acao-pdf:hover {
+    background: #f8cfcc;
+}
+
+/* ================= RESPONSIVIDADE ================= */
+
+@media (max-width: 700px) {
+    .delegacoes-filtros {
+        align-items: stretch;
+    }
+
+    .delegacoes-filtros input {
+        flex-basis: 100%;
+    }
 }
 </style>
 
-<div style="margin-bottom:15px;display:flex;gap:10px;flex-wrap:wrap">
-    <input type="text" id="filtro"
-           placeholder="Pesquisar..."
-           style="flex:1;padding:8px">
+<div class="delegacoes-filtros">
+    <input type="text"
+       id="filtro"
+       placeholder="Pesquisar requisições..."
+       >
 
     <button onclick="filtrarStatus('')" class="btn all" id="btn-all">TODOS</button>
     <button onclick="filtrarStatus('ANDAMENTO')" class="btn andamento" id = "btn-andamento" >ANDAMENTO</button>
@@ -6347,9 +6476,22 @@ tr.analisado td:first-child::before {
 {% if requisicoes %}
 <div class="table-container">
 <table class="tabela-delegacoes">
+    <colgroup>
+        <col style="width:155px">
+        <col style="width:105px">
+        <col style="width:135px">
+        <col style="width:120px">
+        <col style="width:120px">
+        <col style="width:85px">
+        <col style="width:100px">
+        <col style="width:110px">
+        <col style="width:95px">
+        <col style="width:250px">
+        <col style="width:105px">
+    </colgroup>
     <tr>
         <th>Chave</th>
-        <th>Início</th>
+        <th>Despacho</th>
         <th>Status</th>
         <th>Tipo</th>
         <th>Critério</th>
@@ -6358,7 +6500,7 @@ tr.analisado td:first-child::before {
         <th>Ofício</th>
         <th>Monit?</th>
         <th>Obs</th>
-        <th>Ação</th>
+        <th style="text-align:center;">Ações</th>
     </tr>
     {% for r in requisicoes %}
     <tr class="{{ r.status_analise|lower }}">
@@ -6427,7 +6569,26 @@ tr.analisado td:first-child::before {
         </td>
         
         <td>
-            <a class="btn" href="/requisicao/{{ r.id }}">Ver</a>
+            {% set url_pdf = gerar_url_pdf_requisicao(r.chave) %}
+        
+            <div class="acoes-delegacao">
+        
+                <a href="/requisicao/{{ r.id }}"
+                   class="acao-icone"
+                   title="Ver requisição">
+                    🔍
+                </a>
+        
+                {% if url_pdf %}
+                    <a href="{{ url_pdf }}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="acao-icone acao-pdf"
+                       title="Abrir PDF / folha de rosto">
+                        📄
+                    </a>
+                {% endif %}
+            </div>
         </td>
     </tr>
     {% endfor %}
@@ -6435,111 +6596,145 @@ tr.analisado td:first-child::before {
 </div>
 
 <script>
-document.querySelectorAll(".status-select").forEach(sel => {
-    sel.addEventListener("change", function () {
 
-        fetch("/requisicoes", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-                acao: "atualizar",
-                id: this.dataset.id,
-                status_analise: this.value
-            })
-        })
-        .then(r => r.text())
-        .then(resp => {
-            if (resp !== "OK") {
-                alert("Erro ao atualizar status");
-                return;
-            }
-            let tr = this.closest("tr");
-            tr.className = this.value.toLowerCase();
-        })
-        .catch(err => {
-            alert("Erro de rede");
-            console.error(err);
-        });
+let statusAtual = "ANDAMENTO";
 
-    });
-});
+/* ================= FILTROS ================= */
 
-let statusAtual = "ANDAMENTO"; // padrão
+function ativarBotao(status) {
 
-function ativarBotao(status){
-    document.querySelectorAll(".btn").forEach(b => b.classList.remove("ativo"));
+    document.querySelectorAll(
+        ".delegacoes-filtros .btn"
+    ).forEach(b => b.classList.remove("ativo"));
 
-    if(status === ""){
+    if (status === "") {
         document.getElementById("btn-all").classList.add("ativo");
     } else {
-        document.getElementById("btn-" + status.toLowerCase()).classList.add("ativo");
+        document.getElementById(
+            "btn-" + status.toLowerCase()
+        ).classList.add("ativo");
     }
 }
 
-document.getElementById("filtro").addEventListener("keyup", aplicarFiltros);
+function filtrarStatus(status) {
 
-function filtrarStatus(status){
     statusAtual = status;
+
     ativarBotao(status);
+
     aplicarFiltros();
 }
 
-function aplicarFiltros(){
-    let texto = document.getElementById("filtro").value.toLowerCase();
+function aplicarFiltros() {
 
-    document.querySelectorAll("table tr").forEach((tr, i) => {
+    const texto = document
+        .getElementById("filtro")
+        .value
+        .toLowerCase();
+
+    document.querySelectorAll(
+        ".tabela-delegacoes tr"
+    ).forEach((tr, i) => {
+
         if (i === 0) return;
 
-        let matchTexto = tr.innerText.toLowerCase().includes(texto);
-        let matchStatus = !statusAtual || tr.classList.contains(statusAtual.toLowerCase());
+        const matchTexto = tr.innerText
+            .toLowerCase()
+            .includes(texto);
 
-        tr.style.display = (matchTexto && matchStatus) ? "" : "none";
+        const matchStatus =
+            !statusAtual ||
+            tr.classList.contains(statusAtual.toLowerCase());
+
+        tr.style.display =
+            (matchTexto && matchStatus) ? "" : "none";
+
     });
 }
 
-/* APLICA O FILTRO AO CARREGAR A PÁGINA */
-document.addEventListener("DOMContentLoaded", () => {
-    ativarBotao("ANDAMENTO");
-    aplicarFiltros();
-});
+document.getElementById("filtro")
+    .addEventListener("input", aplicarFiltros);
 
-document.querySelectorAll(".campo-inline, .status-select").forEach(el => {
 
-    let evento = el.tagName === "SELECT" ? "change" : "blur";
+/* ================= SALVAMENTO INLINE ================= */
 
-    el.addEventListener(evento, function(){
+document.querySelectorAll(
+    ".campo-inline, .status-select"
+).forEach(el => {
 
-        let tr = this.closest("tr");
-        let id = this.dataset.id || tr.querySelector(".status-select").dataset.id;
+    const evento =
+        el.tagName === "SELECT" ? "change" : "blur";
 
-        let fd = new FormData();
-        fd.append("acao","atualizar");
+    el.addEventListener(evento, function() {
+
+        const tr = this.closest("tr");
+
+        const id = this.dataset.id;
+
+        const fd = new FormData();
+
+        fd.append("acao", "atualizar");
         fd.append("id", id);
 
-        fd.append("status_analise", tr.querySelector(".status-select").value);
-        fd.append("nota", tr.querySelector("[data-campo='nota']").value);
-        fd.append("num_nota", tr.querySelector("[data-campo='num_nota']").value);
-        fd.append("oficio", tr.querySelector("[data-campo='oficio']").value);
-        fd.append("monitoramento", tr.querySelector("[data-campo='monitoramento']").value);
-        fd.append("observacoes", tr.querySelector("[data-campo='observacoes']").value);
+        fd.append(
+            "status_analise",
+            tr.querySelector(".status-select").value
+        );
 
-        fetch("/requisicoes", { method:"POST", body: fd })
+        fd.append(
+            "nota",
+            tr.querySelector("[data-campo='nota']").value
+        );
+
+        fd.append(
+            "num_nota",
+            tr.querySelector("[data-campo='num_nota']").value
+        );
+
+        fd.append(
+            "oficio",
+            tr.querySelector("[data-campo='oficio']").value
+        );
+
+        fd.append(
+            "monitoramento",
+            tr.querySelector("[data-campo='monitoramento']").value
+        );
+
+        fd.append(
+            "observacoes",
+            tr.querySelector("[data-campo='observacoes']").value
+        );
+
+        fetch("/requisicoes", {
+            method: "POST",
+            body: fd
+        })
         .then(r => r.text())
         .then(resp => {
-            if(resp !== "OK"){
+
+            if (resp !== "OK") {
                 alert("Erro ao salvar");
                 console.error(resp);
+                return;
             }
+
+            /* Atualiza a cor da linha ao mudar o status */
+            if (this.classList.contains("status-select")) {
+                tr.className = this.value.toLowerCase();
+            }
+            aplicarFiltros();
         })
         .catch(err => {
             alert("Erro de rede");
             console.error(err);
         });
-
     });
-
 });
 
+/* ================= INICIALIZAÇÃO ================= */
+ativarBotao("ANDAMENTO");
+aplicarFiltros();
 </script>
 
 
@@ -6550,7 +6745,8 @@ document.querySelectorAll(".campo-inline, .status-select").forEach(el => {
         requisicoes=requisicoes,
         fmt=fmt,
         user=session["user"],
-        perfil=session["perfil"]
+        perfil=session["perfil"],
+        gerar_url_pdf_requisicao=gerar_url_pdf_requisicao
     )
 
 # ---------------------------------------------------------
@@ -8193,6 +8389,57 @@ def importar_requisicoes_completo():
     </script>
     """)
 
+def gerar_url_pdf_requisicao(chave):
+    partes = [
+        parte.strip()
+        for parte in str(chave or "").split("/")
+    ]
+
+    if len(partes) < 3:
+        return None
+
+    numero, ano, sigla = partes[:3]
+
+    if not numero.isdigit() or not ano.isdigit():
+        return None
+
+    empresas = {
+        "DMAE": 2,
+        "ARESAN": 62,
+        "FUTEL": 5,
+        "FERUB": 6,
+        "EMAM": 9,
+        "IPREMU": 3
+    }
+    cd_empresa = empresas.get(sigla.upper(), 1)
+    parametros = {
+        "__report": "../webcompras/WEB-INF/classes/rel/birt/requisicaoExternaTramitacao.rptdesign",
+        "jndiRelatorio": "java:comp/env/jdbc/webcompras",
+        "gestao": 1,
+        "cdEmpresa": cd_empresa,
+        "cdFilialEmpresa": 1,
+        "dtAnoRequisicao": ano,
+        "nrRequisicao": numero,
+        "nrEmpenho": 0,
+        "nrContrato": 0,
+        "nrSeq": 0,
+        "nrAnoLicitacao": 0,
+        "dtAnoEmpenho": 0,
+        "aditamento": 0,
+        "nrAditivoArg": 0,
+        "nrRenovacaoArg": 0,
+        "usuario": "****7533***",
+        "nomeUsuario": "Renan Justino Rezende Silva",
+        "__format": "pdf",
+        "__pageoverflow": 0,
+        "__overwrite": "true"
+    }
+    base_url = (
+        "https://webcompras.uberlandia.mg.gov.br/"
+        "plcVis372/frameset"
+    )
+    return base_url + "?" + urlencode(parametros)
+
 @app.route("/requisicoes", methods=["GET", "POST"])
 def requisicoes():
     if "user" not in session:
@@ -8482,6 +8729,37 @@ def requisicoes():
     #tbl th:nth-child(2) {
         z-index: 11;
     }
+
+    .acoes-cell {
+        white-space: nowrap;
+        min-width: 130px;
+    }
+    
+    .acao-icone {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        margin: 0 2px;
+        border: none;
+        border-radius: 6px;
+        background: #f1f3f5;
+        text-decoration: none;
+        font-size: 16px;
+        cursor: pointer;
+        vertical-align: middle;
+    }
+    .acao-icone:hover {
+        background: #e2e6ea;
+        transform: translateY(-1px);
+    }
+    .acao-pdf {
+        background: #fde8e7;
+    }
+    .acao-pdf:hover {
+        background: #f8cfcc;
+    }
     </style>
     
     <h3>Requisições</h3>
@@ -8655,14 +8933,28 @@ def requisicoes():
                 </select>
             </td>
             
-            <td style="white-space:nowrap;">
-                <a href="/requisicao/{{ r.id }}" title="Ver">🔍</a>
-                &nbsp;
-                <a href="/requisicoes/editar/{{ r.id }}" title="Editar">✏️</a>
-                &nbsp;
-                <button onclick="excluir({{ r.id }})" title="Excluir">🗑️</button>
+            <td class="acoes-cell">
+                {% set url_pdf = gerar_url_pdf_requisicao(r.chave) %}
+                <a href="/requisicao/{{ r.id }}"
+                   class="acao-icone"
+                   title="Ver requisição">🔍</a>
+            
+                <a href="/requisicoes/editar/{{ r.id }}"
+                   class="acao-icone"
+                   title="Editar requisição">✏️</a>
+            
+                {% if url_pdf %}
+                    <a href="{{ url_pdf }}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="acao-icone acao-pdf"
+                       title="Abrir PDF da requisição">📄</a>
+                {% endif %}
+            
+                <button onclick="excluir({{ r.id }})"
+                        class="acao-icone"
+                        title="Excluir">🗑️</button>
             </td>
-
         </tr>
         {% endfor %}
     </table>
@@ -8799,6 +9091,7 @@ function atualizarCampo(id, campo, valor){
         q=q,                     # ✅ mantém busca
         fmt=fmt,
         fmt_br=fmt_br,
+        gerar_url_pdf_requisicao=gerar_url_pdf_requisicao
     )
 
 @app.route("/requisicoes/editar/<int:id>", methods=["GET","POST"])
