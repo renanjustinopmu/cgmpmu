@@ -8440,6 +8440,38 @@ def gerar_url_pdf_requisicao(chave):
     )
     return base_url + "?" + urlencode(parametros)
 
+def gerar_url_pdf_requisicao_eng(numero_ano, secretaria):
+    partes = [
+        parte.strip()
+        for parte in str(numero_ano or "").split("/")
+    ]
+    if len(partes) < 2:
+        return None
+    numero = partes[0]
+    ano = partes[1]
+    if not numero.isdigit() or not ano.isdigit():
+        return None
+    # Identifica a sigla pela secretaria
+    texto = str(secretaria or "").upper()
+    siglas = [
+        "DMAE",
+        "ARESAN",
+        "FUTEL",
+        "FERUB",
+        "EMAM",
+        "IPREMU"
+    ]
+    sigla = next(
+        (s for s in siglas if s in texto),
+        "OUTRA"
+    )
+    # Caso o número já contenha a sigla, aproveita essa informação
+    if len(partes) >= 3 and partes[2]:
+        sigla = partes[2].upper()
+    chave = f"{numero}/{ano}/{sigla}"
+    
+    return gerar_url_pdf_requisicao(chave)
+
 @app.route("/requisicoes", methods=["GET", "POST"])
 def requisicoes():
     if "user" not in session:
@@ -13478,7 +13510,7 @@ textarea{
 .col-monitor{width:90px}
 .col-beneficio{width:110px}
 .col-apont{width:360px}
-.col-acao{width:80px}
+.col-acao{width:145px}
 
 .auditada td{
     background:#bbf7d0 !important; /* verde */
@@ -13494,6 +13526,42 @@ textarea{
 
 .auditar td{
     background:#fde047 !important; /* amarelo */
+}
+
+/* Ações */
+.acoes-eng {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.acao-icone {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 7px;
+    background: #f1f3f5;
+    text-decoration: none;
+    font-size: 17px;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.acao-icone:hover {
+    background: #e2e6ea;
+}
+
+.acao-pdf {
+    background: #fde8e7;
+}
+
+.acao-pdf:hover {
+    background: #f8cfcc;
 }
 
 </style>
@@ -13886,17 +13954,34 @@ selected
 </td>
 
 <td>
+    {% set url_pdf = gerar_url_pdf_requisicao_eng(r.numero_ano, r.secretaria) %}
+    <div class="acoes-eng">
+        <button
+            type="button"
+            class="acao-icone"
+            onclick="salvar({{r.id}})"
+            title="Salvar alterações">
+            💾
+        </button>
 
-<button
-class="btn btn-green"
-onclick="salvar({{r.id}})">
-💾
-</button>
+        <button
+            type="button"
+            class="acao-icone"
+            onclick="excluir({{r.id}})"
+            title="Excluir requisição">
+            🗑️
+        </button>
 
-<button class="btn btn-red" onclick="excluir({{r.id}})">
-🗑
-</button>
-
+        {% if url_pdf %}
+            <a href="{{ url_pdf }}"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="acao-icone acao-pdf"
+               title="Abrir PDF da requisição">
+                📄
+            </a>
+        {% endif %}
+    </div>
 </td>
 
 </tr>
@@ -14199,7 +14284,8 @@ window.onload = function(){
         total_paginas=total_paginas,
         request=request,
         user=session["user"],
-        perfil=session["perfil"]
+        perfil=session["perfil"],
+        gerar_url_pdf_requisicao_eng=gerar_url_pdf_requisicao_eng
     )
 
 @app.route("/painel_reqs_engenharia")
