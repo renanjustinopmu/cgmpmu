@@ -17,8 +17,11 @@ from psycopg2 import IntegrityError
 from datetime import datetime
 from urllib.parse import quote
 from urllib.parse import urlencode
-
+import re
+import time
+import unicodedata
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def parse_data_excel(valor):
     if not valor:
@@ -3149,6 +3152,7 @@ def os_edit(id):
         equipe = ", ".join(request.form.getlist('equipe'))
         observacao = request.form.get('observacao')
         status = request.form.get('status')
+        monit = request.form.get('monit') or None
         plan = 1 if request.form.get('plan') else 0
         exec_ = 1 if request.form.get('exec') else 0
         rp = 1 if request.form.get('rp') else 0
@@ -3180,7 +3184,7 @@ def os_edit(id):
                     keys=%s, uo=%s,
                     plan0100=%s, exec0100=%s, rp0100=%s, rf0100=%s,
                     rp_dt_envio_ua=%s,
-                    rf_dt_envio_sup=%s, rf_dt_envio_ua=%s
+                    rf_dt_envio_sup=%s, rf_dt_envio_ua=%s, monit=%s
             
                 WHERE id=%s
             """, (
@@ -3193,7 +3197,7 @@ def os_edit(id):
                 plan0100, exec0100, rp0100, rf0100,
                 rp_dt_envio_ua,
                 rf_dt_envio_sup, rf_dt_envio_ua,
-            
+                monit,
                 id
             ))
 
@@ -3324,6 +3328,22 @@ def os_edit(id):
             <select name='status'>
                 <option {'selected' if os['status']=='Andamento' else ''}>Andamento</option>
                 <option {'selected' if os['status']=='Concluido' else ''}>Concluido</option>
+            </select>
+        </div>
+    
+        <div>Monitoramento:<br>
+            <select name='monit'>
+                <option value='' {'selected' if not os.get('monit') else ''}>
+                    Selecione
+                </option>
+        
+                <option value='SIM' {'selected' if os.get('monit') == 'SIM' else ''}>
+                    SIM
+                </option>
+        
+                <option value='NÃO' {'selected' if os.get('monit') == 'NÃO' else ''}>
+                    NÃO
+                </option>
             </select>
         </div>
     </div>
@@ -6237,6 +6257,34 @@ def minhas_delegacoes():
     requisicoes = cur.fetchall()
     con.close()
 
+    # ======================================================
+    # CHECKLIST E PDFs - REUTILIZA CACHE DA ROTA PRINCIPAL
+    # ======================================================
+
+    if requisicoes:
+
+        # Consulta às planilhas (cache compartilhado)
+        checklist_chaves, checklist_fontes = carregar_checklists_google()
+
+        # Consulta aos PDFs do Drive (cache compartilhado)
+        indice_pdfs, consulta_pdfs_ok = carregar_pdfs_checklist_drive()
+
+        for r in requisicoes:
+
+            # Status do checklist: sim, nao ou indisponivel
+            r["checklist_status"] = verificar_checklist_requisicao(
+                r,
+                checklist_chaves,
+                checklist_fontes
+            )
+
+            # PDFs correspondentes à requisição
+            r["pdf_checklist"] = localizar_pdf_requisicao(
+                r,
+                indice_pdfs
+            )
+            r["pdf_checklist_consulta_ok"] = consulta_pdfs_ok
+
     return render_template_string(
         BASE.replace("{% block content %}{% endblock %}", """
 <h2>Minhas Requisições Delegadas</h2>
@@ -6329,8 +6377,8 @@ tr.analisado td:first-child::before {
 }
 
 .tabela-delegacoes {
-    width: 1380px;
-    min-width: 1380px;
+    width: 1580px;
+    min-width: 1580px;
     table-layout: fixed;
     border-collapse: separate;
     border-spacing: 0;
@@ -6459,6 +6507,70 @@ tr.analisado td:first-child::before {
         flex-basis: 100%;
     }
 }
+/* INDICADOR DE CHECKLIST */
+
+.checklist-cell {
+    text-align: center;
+    font-size: 21px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.checklist-ok {
+    color: #198754;
+}
+
+.checklist-nao {
+    color: #dc3545;
+}
+
+.checklist-erro {
+    color: #e0a000;
+}
+
+/* PDF CHECKLIST */
+
+.pdf-checklist-cell {
+    text-align: center;
+    white-space: nowrap;
+    overflow: visible !important;
+}
+
+.pdf-lista {
+    position: absolute;
+    right: 0;
+    top: 35px;
+    z-index: 100;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 10px;
+    min-width: 260px;
+    max-width: 400px;
+    max-height: 250px;
+    overflow-y: auto;
+    box-shadow: 0 3px 10px rgba(0,0,0,.15);
+}
+
+.pdf-lista a {
+    display: block;
+    padding: 7px;
+    color: #333;
+    text-decoration: none;
+    border-bottom: 1px solid #eee;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.pdf-lista a:hover {
+    background: #f1f3f5;
+}
+.pdf-checklist-cell summary {
+    list-style: none;
+    cursor: pointer;
+}
+.pdf-checklist-cell summary::-webkit-details-marker {
+    display: none;
+}
 </style>
 
 <div class="delegacoes-filtros">
@@ -6488,6 +6600,8 @@ tr.analisado td:first-child::before {
         <col style="width:95px">
         <col style="width:250px">
         <col style="width:105px">
+        <col style="width:85px">
+        <col style="width:110px">
     </colgroup>
     <tr>
         <th>Chave</th>
@@ -6501,6 +6615,8 @@ tr.analisado td:first-child::before {
         <th>Monit?</th>
         <th>Obs</th>
         <th style="text-align:center;">Ações</th>
+        <th style="text-align:center;">Checklist</th>
+        <th style="text-align:center;">PDF Checklist</th>
     </tr>
     {% for r in requisicoes %}
     <tr class="{{ r.status_analise|lower }}">
@@ -6588,9 +6704,97 @@ tr.analisado td:first-child::before {
                         📄
                     </a>
                 {% endif %}
-            </div>
+            
+        </td>
+
+        <!-- CHECKLIST -->
+        <td class="checklist-cell" style="text-align:center;">
+
+            {% if r.checklist_status == 'sim' %}
+
+                <span class="checklist-ok"
+                      title="Checklist localizado nas planilhas">
+                    ✓
+                </span>
+
+            {% elif r.checklist_status == 'nao' %}
+
+                <span class="checklist-nao"
+                      title="Checklist não localizado">
+                    ✕
+                </span>
+
+            {% else %}
+
+                <span class="checklist-erro"
+                      title="Não foi possível consultar as planilhas">
+                    ?
+                </span>
+
+            {% endif %}
+
+        </td>
+
+        <!-- PDF CHECKLIST -->
+        <td class="pdf-checklist-cell" style="text-align:center;">
+
+            {% if r.pdf_checklist %}
+
+                {% if r.pdf_checklist|length == 1 %}
+
+                    <a href="{{ r.pdf_checklist[0].link }}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="acao-icone acao-pdf"
+                       title="{{ r.pdf_checklist[0].nome }}">
+                        📄
+                    </a>
+
+                {% else %}
+
+                    <details style="position:relative;">
+
+                        <summary class="acao-icone acao-pdf"
+                                 title="Vários PDFs encontrados">
+                            📄 {{ r.pdf_checklist|length }}
+                        </summary>
+
+                        <div class="pdf-lista">
+
+                            {% for pdf in r.pdf_checklist %}
+
+                                <a href="{{ pdf.link }}"
+                                   target="_blank"
+                                   rel="noopener noreferrer">
+                                    📄 {{ pdf.nome }}
+                                </a>
+
+                            {% endfor %}
+
+                        </div>
+
+                    </details>
+
+                {% endif %}
+
+            {% elif not r.pdf_checklist_consulta_ok %}
+
+                <span style="color:#e0a000;"
+                      title="Falha na consulta ao Google Drive">
+                    ?
+                </span>
+
+            {% else %}
+
+                <span style="color:#999;"
+                      title="PDF não localizado">
+                    —
+                </span>
+
+            {% endif %}
         </td>
     </tr>
+
     {% endfor %}
 </table>
 </div>
@@ -8472,6 +8676,714 @@ def gerar_url_pdf_requisicao_eng(numero_ano, secretaria):
     
     return gerar_url_pdf_requisicao(chave)
 
+# ==========================================================
+# CHECKLIST - CONSULTA NAS DUAS PLANILHAS DO GOOGLE SHEETS
+# ==========================================================
+
+CHECKLIST_PLANILHAS = {
+    "planilha_1": {
+        "id": "1teFFy38hvUmAn1Cfr6m0EXSaAhOvCUohtAH5MjQ6zbo",
+        "gid": 262102344
+    },
+    "planilha_2": {
+        "id": "1RYbTV2AzzVBswO_5gzDKSSSR1BiNuUF-Di3pZkjHs_s",
+        "gid": 1076101217
+    },
+    "planilha_3": {
+        "id": "1r-tV6Pecy_TI74jebhA7wQMfaEBbzhaEO2PFOXp9J8I",
+        "gid": 1818821254
+    },
+    "planilha_4": {
+        "id": "1oLfGkaSge7Jx5RCeXv1Pv_OrMMG4Rhxcez1d7zAGY0w",
+        "gid": 650689614
+    },
+    "planilha_5": {
+        "id": "1NFr87VLSvs_dcQujmEeMXHixBfPiuMbyR3EBAurEh-M",
+        "gid": 2086986679
+    }
+}
+
+# Mapeamento do código da secretaria para a entidade
+CHECKLIST_UO = {
+    "17": "DMAE",
+    "18": "IPREMU",
+    "19": "FUTEL",
+    "20": "FERUB",
+    "21": "EMAM",
+    "38": "ARESAN"
+}
+
+CHECKLIST_SIGLAS = tuple(CHECKLIST_UO.values())
+
+# Cache
+CHECKLIST_CACHE = {
+    "atualizado": 0,
+    "chaves": set(),
+    "fontes_ok": {}
+}
+
+
+def normalizar_checklist_texto(valor):
+    texto = str(valor or "").upper()
+
+    texto = unicodedata.normalize("NFKD", texto)
+
+    texto = "".join(
+        c for c in texto
+        if not unicodedata.combining(c)
+    )
+
+    texto = texto.replace("–", "-").replace("—", "-")
+
+    return texto.strip()
+
+# ==========================================================
+# INTERPRETA UMA CÉLULA DA COLUNA D
+# ==========================================================
+def extrair_requisicoes_checklist(valor):
+
+    texto = normalizar_checklist_texto(valor)
+
+    if not texto:
+        return set()
+
+    # ==================================================
+    # IDENTIFICA A ENTIDADE DA LINHA
+    # A sigla vale para todos os números encontrados
+    # ==================================================
+
+    entidade = "PMU"
+
+    for sigla in CHECKLIST_SIGLAS:
+
+        if re.search(
+            rf"(?<![A-Z0-9]){sigla}(?![A-Z0-9])",
+            texto
+        ):
+            entidade = sigla
+            break
+
+    # ==================================================
+    # IDENTIFICA O ANO
+    # Aceita: /2026, -2026, _2026 ou espaço + 2026
+    # ==================================================
+
+    anos = re.findall(
+        r"(?<!\d)((?:19|20)\d{2})(?!\d)",
+        texto
+    )
+
+    ano = anos[-1] if anos else None
+
+    # ==================================================
+    # REMOVE AS SIGLAS DA ANÁLISE NUMÉRICA
+    # ==================================================
+
+    texto_numeros = texto
+
+    for sigla in CHECKLIST_SIGLAS:
+
+        texto_numeros = re.sub(
+            rf"(?<![A-Z0-9]){sigla}(?![A-Z0-9])",
+            " ",
+            texto_numeros
+        )
+
+    # ==================================================
+    # REMOVE OS ANOS
+    # ==================================================
+
+    for ano_encontrado in set(anos):
+
+        texto_numeros = re.sub(
+            rf"(?<!\d){re.escape(ano_encontrado)}(?!\d)",
+            " ",
+            texto_numeros
+        )
+
+    # ==================================================
+    # EXTRAI TODOS OS NÚMEROS DA REQUISIÇÃO
+    # ==================================================
+
+    numeros = re.findall(
+        r"\d+",
+        texto_numeros
+    )
+
+    resultado = set()
+    for numero in numeros:
+        resultado.add((
+            numero,
+            ano,
+            entidade
+        ))
+    return resultado
+
+# ==========================================================
+# IDENTIFICA ENTIDADE DA REQUISIÇÃO NO BANCO
+# ==========================================================
+
+def entidade_requisicao_banco(r):
+
+    secretaria = str(
+        r.get("secretaria") or ""
+    ).strip()
+
+    # Os dois primeiros dígitos identificam a UO
+    m = re.match(
+        r"^\s*(\d{2})\b",
+        secretaria
+    )
+
+    if m:
+
+        codigo = m.group(1)
+
+        return CHECKLIST_UO.get(
+            codigo,
+            "PMU"
+        )
+
+    # Fallback: tenta identificar pela própria chave
+    chave = str(r.get("chave") or "")
+
+    for sigla in CHECKLIST_SIGLAS:
+
+        if re.search(
+            rf"(?<![A-Z0-9]){sigla}(?![A-Z0-9])",
+            chave.upper()
+        ):
+            return sigla
+
+    return "PMU"
+
+
+# ==========================================================
+# EXTRAI NÚMERO E ANO DA CHAVE DO SISTEMA
+# ==========================================================
+
+def dados_chave_requisicao(chave):
+
+    chave = str(chave or "").strip()
+
+    if not chave:
+        return None, None
+
+    # Primeiro componente: número da requisição
+    m = re.match(
+        r"^\s*(\d+)",
+        chave
+    )
+
+    if not m:
+        return None, None
+
+    numero = m.group(1)
+
+    # Identifica o ano na chave
+    anos = re.findall(
+        r"(?<!\d)(?:19|20)\d{2}(?!\d)",
+        chave
+    )
+
+    ano = anos[-1] if anos else None
+
+    return numero, ano
+
+
+# ==========================================================
+# DOWNLOAD DE UMA PLANILHA
+# ==========================================================
+
+
+def baixar_planilha_checklist(planilha_id, gid=None):
+
+    url = (
+        f"https://docs.google.com/spreadsheets/d/"
+        f"{planilha_id}/export"
+    )
+
+    params = {
+        "format": "csv"
+    }
+
+    if gid is not None:
+        params["gid"] = str(gid)
+
+    resposta = requests.get(
+        url,
+        params=params,
+        timeout=(10, 30),
+        headers={
+            "User-Agent": "Mozilla/5.0"
+        }
+    )
+
+    print(
+        f"CHECKLIST HTTP: {resposta.status_code} "
+        f"| URL: {resposta.url} "
+        f"| CONTENT-TYPE: {resposta.headers.get('Content-Type')}"
+    )
+
+    resposta.raise_for_status()
+
+    conteudo = resposta.content.decode(
+        "utf-8-sig",
+        errors="replace"
+    )
+
+    # Verifica se Google retornou uma página HTML
+    # em vez dos dados CSV
+    if (
+        conteudo.lstrip().lower().startswith("<html")
+        or conteudo.lstrip().lower().startswith("<!doctype html")
+        or "text/html" in resposta.headers.get(
+            "Content-Type", ""
+        ).lower()
+    ):
+        raise ValueError(
+            "Google Sheets retornou HTML em vez de CSV. "
+            "Verifique o compartilhamento da planilha "
+            "e o GID da aba."
+        )
+
+    return conteudo
+
+# ==========================================================
+# CARREGA AS DUAS PLANILHAS COM CACHE
+# ==========================================================
+
+def carregar_checklists_google():
+
+    agora = time.time()
+
+    fontes_anteriores = CHECKLIST_CACHE["fontes_ok"]
+
+    ttl = (
+        86400
+        if fontes_anteriores
+        and all(fontes_anteriores.values())
+        else 300
+    )
+
+    if (
+        CHECKLIST_CACHE["atualizado"]
+        and agora - CHECKLIST_CACHE["atualizado"] < ttl
+    ):
+        return (
+            CHECKLIST_CACHE["chaves"],
+            CHECKLIST_CACHE["fontes_ok"]
+        )
+
+    todas_chaves = set()
+
+    fontes_ok = {
+        nome: False
+        for nome in CHECKLIST_PLANILHAS
+    }
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+
+        tarefas = {
+            executor.submit(
+                baixar_planilha_checklist,
+                config["id"],
+                config["gid"]
+            ): nome
+
+            for nome, config in CHECKLIST_PLANILHAS.items()
+        }
+
+        for futuro in as_completed(tarefas):
+
+            nome = tarefas[futuro]
+
+            try:
+
+                conteudo = futuro.result()
+
+                leitor = csv.reader(
+                    io.StringIO(conteudo)
+                )
+
+                chaves_planilha = set()
+                linhas_validas = 0
+
+                for linha in leitor:
+
+                    # Coluna D
+                    if len(linha) <= 3:
+                        continue
+
+                    valor = linha[3]
+
+                    if not valor.strip():
+                        continue
+
+                    linhas_validas += 1
+
+                    encontradas = extrair_requisicoes_checklist(
+                        valor
+                    )
+
+                    chaves_planilha.update(encontradas)
+
+                if linhas_validas == 0:
+                    raise ValueError(
+                        "Nenhuma linha válida encontrada na coluna D."
+                    )
+
+                todas_chaves.update(chaves_planilha)
+
+                fontes_ok[nome] = True
+
+                print(
+                    f"CHECKLIST {nome}: "
+                    f"{linhas_validas} linhas lidas | "
+                    f"{len(chaves_planilha)} combinações encontradas."
+                )
+
+            except Exception as e:
+
+                print(
+                    f"ERRO CHECKLIST [{nome}]: "
+                    f"{type(e).__name__}: {e}"
+                )
+
+    CHECKLIST_CACHE["chaves"] = todas_chaves
+    CHECKLIST_CACHE["fontes_ok"] = fontes_ok
+    CHECKLIST_CACHE["atualizado"] = agora
+
+    print(
+        "CHECKLIST RESULTADO:",
+        fontes_ok,
+        "| TOTAL DE COMBINAÇÕES:",
+        len(todas_chaves)
+    )
+
+    return todas_chaves, fontes_ok
+
+# ==========================================================
+# VERIFICA SE A REQUISIÇÃO POSSUI CHECKLIST
+# ==========================================================
+
+def verificar_checklist_requisicao(
+    requisicao,
+    chaves_planilhas,
+    fontes_ok
+):
+
+    numero, ano = dados_chave_requisicao(
+        requisicao.get("chave")
+    )
+
+    if not numero:
+        return "indisponivel"
+
+    entidade = entidade_requisicao_banco(
+        requisicao
+    )
+
+    # Compara número, ano e entidade
+    for numero_planilha, ano_planilha, entidade_planilha in chaves_planilhas:
+
+        if numero != numero_planilha:
+            continue
+
+        if entidade != entidade_planilha:
+            continue
+
+        if ano_planilha and ano and ano_planilha != ano:
+            continue
+
+        # Encontrou em qualquer uma das planilhas
+        return "sim"
+
+    # Só apresenta X quando as duas consultas funcionaram
+    if all(fontes_ok.values()):
+        return "nao"
+
+    # Se alguma planilha falhou, não afirma que não existe
+    return "indisponivel"
+
+
+# ==========================================================
+# CHECKLIST PDF - GOOGLE DRIVE
+# ==========================================================
+
+DRIVE_CHECKLIST_FOLDER = "15eFq7HG3wp-DMnkSCHenWoCoNAJ7_yLu"
+
+GOOGLE_DRIVE_API_KEY = "AIzaSyBLrC9LKmQqe_DbLcR-tLb3zbkM9tCwzU4"
+DRIVE_API_URL = "https://www.googleapis.com/drive/v3/files"
+
+# Cache dos PDFs
+CHECKLIST_PDF_CACHE = {
+    "atualizado": 0,
+    "arquivos": {},
+    "ok": False
+}
+
+
+# ==========================================================
+# IDENTIFICA A REQUISIÇÃO PELO NOME DO PDF
+# ==========================================================
+
+def extrair_chave_pdf(nome_arquivo):
+
+    nome = str(nome_arquivo or "")
+
+    # Procura o trecho Req
+    m = re.search(
+        r"\bREQ(?:UISI[ÇC][AÃ]O)?\s*",
+        nome,
+        flags=re.IGNORECASE
+    )
+
+    if not m:
+        return set()
+
+    # Ignora tudo que vem antes de Req
+    trecho = nome[m.end():]
+
+    # Remove extensão
+    trecho = re.sub(
+        r"\.pdf$",
+        "",
+        trecho,
+        flags=re.IGNORECASE
+    )
+
+    # Reutiliza o interpretador das planilhas
+    return extrair_requisicoes_checklist(trecho)
+
+
+# ==========================================================
+# PERCORRE TODAS AS PASTAS E SUBPASTAS DO DRIVE
+# ==========================================================
+
+def listar_pdfs_drive_checklist():
+
+    if not GOOGLE_DRIVE_API_KEY:
+        raise ValueError(
+            "GOOGLE_DRIVE_API_KEY não configurada no Render."
+        )
+
+    pastas_pendentes = [
+        DRIVE_CHECKLIST_FOLDER
+    ]
+
+    pastas_visitadas = set()
+
+    arquivos_por_chave = {}
+
+    total_pdfs = 0
+
+    while pastas_pendentes:
+
+        pasta_id = pastas_pendentes.pop()
+
+        if pasta_id in pastas_visitadas:
+            continue
+
+        pastas_visitadas.add(pasta_id)
+
+        page_token = None
+
+        while True:
+
+            params = {
+                "key": GOOGLE_DRIVE_API_KEY,
+
+                "q": (
+                    f"'{pasta_id}' in parents "
+                    "and trashed = false"
+                ),
+
+                "pageSize": 1000,
+
+                "fields": (
+                    "nextPageToken,"
+                    "files(id,name,mimeType,webViewLink,modifiedTime)"
+                ),
+
+                "supportsAllDrives": True,
+                "includeItemsFromAllDrives": True
+            }
+
+            if page_token:
+                params["pageToken"] = page_token
+
+            resposta = requests.get(
+                DRIVE_API_URL,
+                params=params,
+                timeout=(5, 25)
+            )
+
+            resposta.raise_for_status()
+
+            dados = resposta.json()
+
+            for arquivo in dados.get("files", []):
+
+                nome = arquivo.get("name", "")
+
+                mime = arquivo.get("mimeType", "")
+
+                # Se for uma subpasta, entra nela também
+                if mime == "application/vnd.google-apps.folder":
+
+                    pastas_pendentes.append(
+                        arquivo["id"]
+                    )
+
+                    continue
+
+                # Considera somente PDFs
+                if (
+                    mime != "application/pdf"
+                    and not nome.lower().endswith(".pdf")
+                ):
+                    continue
+
+                total_pdfs += 1
+
+                # Identifica número, ano e entidade
+                chaves = extrair_chave_pdf(nome)
+
+                if not chaves:
+                    print(
+                        "PDF sem padrão de requisição:",
+                        nome
+                    )
+                    continue
+
+                link = arquivo.get("webViewLink")
+
+                if not link:
+                    link = (
+                        "https://drive.google.com/file/d/"
+                        f"{arquivo['id']}/view"
+                    )
+
+                registro_pdf = {
+                    "id": arquivo["id"],
+                    "nome": nome,
+                    "link": link,
+                    "modificado": arquivo.get(
+                        "modifiedTime", ""
+                    )
+                }
+
+                # Um PDF pode identificar mais de uma requisição
+                for chave in chaves:
+
+                    arquivos_por_chave.setdefault(
+                        chave, []
+                    ).append(registro_pdf)
+
+            page_token = dados.get("nextPageToken")
+
+            if not page_token:
+                break
+
+    # Ordena os PDFs pela última modificação
+    for chave in arquivos_por_chave:
+
+        arquivos_por_chave[chave].sort(
+            key=lambda x: x["modificado"],
+            reverse=True
+        )
+
+    print(
+        "CHECKLIST DRIVE:",
+        len(pastas_visitadas),
+        "pastas consultadas |",
+        total_pdfs,
+        "PDFs localizados |",
+        len(arquivos_por_chave),
+        "chaves identificadas"
+    )
+
+    return arquivos_por_chave
+
+# ==========================================================
+# CARREGAMENTO COM CACHE
+# ==========================================================
+
+def carregar_pdfs_checklist_drive():
+
+    agora = time.time()
+
+    # 24 horas se funcionar; 5 minutos se houver falha
+    ttl = (
+        86400
+        if CHECKLIST_PDF_CACHE["ok"]
+        else 300
+    )
+
+    # Verifica se o cache ainda é válido
+    if (
+        CHECKLIST_PDF_CACHE["atualizado"]
+        and agora - CHECKLIST_PDF_CACHE["atualizado"] < ttl
+    ):
+
+        return (
+            CHECKLIST_PDF_CACHE["arquivos"],
+            CHECKLIST_PDF_CACHE["ok"]
+        )
+
+    try:
+
+        arquivos = listar_pdfs_drive_checklist()
+
+        CHECKLIST_PDF_CACHE["arquivos"] = arquivos
+        CHECKLIST_PDF_CACHE["atualizado"] = agora
+        CHECKLIST_PDF_CACHE["ok"] = True
+
+        print("CHECKLIST DRIVE: cache atualizado com sucesso.")
+
+        return arquivos, True
+
+    except Exception as e:
+
+        print(
+            "ERRO NA BUSCA DOS PDFs:",
+            type(e).__name__,
+            str(e)
+        )
+
+        CHECKLIST_PDF_CACHE["atualizado"] = agora
+        CHECKLIST_PDF_CACHE["ok"] = False
+
+        return (
+            CHECKLIST_PDF_CACHE["arquivos"],
+            False
+        )
+
+
+# ==========================================================
+# LOCALIZA PDF DA REQUISIÇÃO
+# ==========================================================
+
+def localizar_pdf_requisicao(r, indice_pdfs):
+
+    numero, ano = dados_chave_requisicao(
+        r.get("chave")
+    )
+
+    if not numero or not ano:
+        return []
+
+    entidade = entidade_requisicao_banco(r)
+
+    chave = (
+        numero,
+        ano,
+        entidade
+    )
+
+    return indice_pdfs.get(chave, [])
+
 @app.route("/requisicoes", methods=["GET", "POST"])
 def requisicoes():
     if "user" not in session:
@@ -8556,7 +9468,7 @@ def requisicoes():
                         observacoes,
                         req_id
                     ))
-    
+                    
                 else:
                     cur.execute("""
                         UPDATE requisicoes
@@ -8700,6 +9612,20 @@ def requisicoes():
     
     # Detecta se existe página anterior
     tem_anterior = page > 1
+  
+    # ======================================================
+    # VERIFICA CHECKLIST DAS REQUISIÇÕES DA PÁGINA
+    # ======================================================
+    
+    checklist_chaves, checklist_fontes = carregar_checklists_google()
+    
+    for r in rows:
+    
+        r["checklist_status"] = verificar_checklist_requisicao(
+            r,
+            checklist_chaves,
+            checklist_fontes
+        )
     
     # Colaboradores (mantém como está)
     cur.execute("SELECT id, nome FROM colaboradores ORDER BY nome")
@@ -8709,6 +9635,21 @@ def requisicoes():
     hoje = date.today().isoformat()
     
     con.close()
+
+    # ======================================================
+    # LOCALIZA OS PDFs DOS CHECKLISTS
+    # ======================================================
+    
+    indice_pdfs, consulta_pdfs_ok = carregar_pdfs_checklist_drive()
+    
+    for r in rows:
+    
+        r["pdf_checklist"] = localizar_pdf_requisicao(
+            r,
+            indice_pdfs
+        )
+    
+        r["pdf_checklist_consulta_ok"] = consulta_pdfs_ok
 
     html = """
     
@@ -8730,11 +9671,16 @@ def requisicoes():
     
     /* cabeçalho fixo */
     #tbl th {
-        position: sticky;
-        top: 0;
-        background: #dce8fb;
-        z-index: 10;
-    }
+    position: sticky;
+    top: 0;
+    background: #dce8fb !important;
+    color: #333;
+    z-index: 10;
+    text-align: center;
+    padding: 8px;
+    border: 1px solid #c5d3e5;
+    white-space: nowrap;
+}
     
     /* coluna chave */
     #tbl th:nth-child(1),
@@ -8761,7 +9707,6 @@ def requisicoes():
     #tbl th:nth-child(2) {
         z-index: 11;
     }
-
     .acoes-cell {
         white-space: nowrap;
         min-width: 130px;
@@ -8782,16 +9727,71 @@ def requisicoes():
         cursor: pointer;
         vertical-align: middle;
     }
+    
     .acao-icone:hover {
         background: #e2e6ea;
         transform: translateY(-1px);
     }
+    
     .acao-pdf {
         background: #fde8e7;
     }
+    
     .acao-pdf:hover {
         background: #f8cfcc;
     }
+    .checklist-cell {
+        text-align: center;
+        min-width: 85px;
+        font-size: 22px;
+        font-weight: bold;
+    }
+    
+    .checklist-ok {
+        color: #198754;
+    }
+    
+    .checklist-nao {
+        color: #dc3545;
+    }
+    
+    .checklist-erro {
+        color: #e0a000;
+    }
+    .pdf-checklist-cell {
+    text-align: center;
+    min-width: 110px;
+}
+
+.pdf-lista {
+    position: absolute;
+    right: 0;
+    top: 32px;
+    z-index: 100;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 10px;
+    min-width: 260px;
+    max-width: 400px;
+    max-height: 250px;
+    overflow-y: auto;
+    box-shadow: 0 3px 10px rgba(0,0,0,.15);
+}
+
+.pdf-lista a {
+    display: block;
+    padding: 7px;
+    color: #333;
+    text-decoration: none;
+    border-bottom: 1px solid #eee;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.pdf-lista a:hover {
+    background: #f1f3f5;
+}
     </style>
     
     <h3>Requisições</h3>
@@ -8855,6 +9855,8 @@ def requisicoes():
             <th>Ofício</th>
             <th>Monitoramento</th>
             <th>Ações</th>
+            <th>Checklist</th>
+            <th>PDF Checklist</th>
         </tr>
 
         {% for r in rows %}
@@ -8967,6 +9969,7 @@ def requisicoes():
             
             <td class="acoes-cell">
                 {% set url_pdf = gerar_url_pdf_requisicao(r.chave) %}
+    
                 <a href="/requisicao/{{ r.id }}"
                    class="acao-icone"
                    title="Ver requisição">🔍</a>
@@ -8986,6 +9989,89 @@ def requisicoes():
                 <button onclick="excluir({{ r.id }})"
                         class="acao-icone"
                         title="Excluir">🗑️</button>
+            
+            </td>
+
+            <!-- CHECKLIST -->
+            <td class="checklist-cell">
+
+                {% if r.checklist_status == 'sim' %}
+
+                    <span class="checklist-ok"
+                          title="Checklist localizado nas planilhas">
+                        ✓
+                    </span>
+
+                {% elif r.checklist_status == 'nao' %}
+
+                    <span class="checklist-nao"
+                          title="Checklist não localizado">
+                        ✕
+                    </span>
+
+                {% else %}
+                    <span class="checklist-erro"
+                          title="Não foi possível consultar as duas planilhas">
+                        ?
+                    </span>
+                {% endif %}
+            </td>
+
+            <!-- PDF CHECKLIST -->
+            <td class="pdf-checklist-cell">
+
+                {% if r.pdf_checklist %}
+
+                    {% if r.pdf_checklist|length == 1 %}
+
+                        <a href="{{ r.pdf_checklist[0].link }}"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="acao-icone acao-pdf"
+                           title="{{ r.pdf_checklist[0].nome }}">
+                            📄
+                        </a>
+
+                    {% else %}
+
+                        <details style="position:relative;">
+
+                            <summary class="acao-icone acao-pdf"
+                                     title="Existem vários PDFs">
+                                📄 {{ r.pdf_checklist|length }}
+                            </summary>
+
+                            <div class="pdf-lista">
+
+                                {% for pdf in r.pdf_checklist %}
+
+                                    <a href="{{ pdf.link }}"
+                                       target="_blank"
+                                       rel="noopener noreferrer">
+                                        📄 {{ pdf.nome }}
+                                    </a>
+
+                                {% endfor %}
+
+                            </div>
+
+                        </details>
+
+                    {% endif %}
+
+                {% elif not r.pdf_checklist_consulta_ok %}
+
+                    <span title="Erro na consulta ao Google Drive"
+                          style="color:#e0a000;font-weight:bold;">
+                        ?
+                    </span>
+
+                {% else %}
+                    <span title="PDF não localizado"
+                          style="color:#999;">
+                        —
+                    </span>
+                {% endif %}
             </td>
         </tr>
         {% endfor %}
@@ -8996,97 +10082,109 @@ def requisicoes():
     const podeAtribuirResponsavel =
     {% if perfil == 'admin' %}true{% else %}false{% endif %};
 
-    function salvar(id, responsavelAlterado = false) {    
-        const fd = new FormData();
-        fd.append("acao", "atualizar");
-        fd.append("id", id);
-        fd.append(
-            "status_analise",
-            document.getElementById("status_" + id).value
-        );
-        fd.append(
-            "tipo",
-            document.getElementById("tipo_" + id).value
-        );
-        fd.append(
-            "criterio",
-            document.getElementById("criterio_" + id).value
-        );
-        fd.append(
-            "servidor_id",
-            document.getElementById("servidor_" + id).value
-        );
-        fd.append(
-            "nota",
-            document.getElementById("nota_" + id).value
-        );
-        fd.append(
-            "num_nota",
-            document.getElementById("num_nota_" + id).value
-        );
-        fd.append(
-            "oficio",
-            document.getElementById("oficio_" + id).value
-        );
-        fd.append(
-            "monitoramento",
-            document.getElementById("monitoramento_" + id).value
-        );
-        fetch("/requisicoes", {
-            method: "POST",
-            body: fd
-        })
-        .then(response => response.text())
-        .then(resp => {
-    
-            if (resp !== "OK") {
-                alert("Erro ao salvar");
-                console.error(resp);
-                return;
-            }
-    
-            // Preencher a data na tela após atribuir o responsável.
+
+function salvar(id, responsavelAlterado = false) {
+
+    const fd = new FormData();
+
+    fd.append("acao", "atualizar");
+    fd.append("id", id);
+
+    fd.append(
+        "status_analise",
+        document.getElementById("status_" + id).value
+    );
+
+    fd.append(
+        "tipo",
+        document.getElementById("tipo_" + id).value
+    );
+
+    fd.append(
+        "criterio",
+        document.getElementById("criterio_" + id).value
+    );
+
+    fd.append(
+        "servidor_id",
+        document.getElementById("servidor_" + id).value
+    );
+
+    fd.append(
+        "nota",
+        document.getElementById("nota_" + id).value
+    );
+
+    fd.append(
+        "num_nota",
+        document.getElementById("num_nota_" + id).value
+    );
+
+    fd.append(
+        "oficio",
+        document.getElementById("oficio_" + id).value
+    );
+
+    fd.append(
+        "monitoramento",
+        document.getElementById("monitoramento_" + id).value
+    );
+
+    fetch("/requisicoes", {
+        method: "POST",
+        body: fd
+    })
+    .then(response => response.text())
+    .then(resp => {
+
+        if (resp !== "OK") {
+            alert("Erro ao salvar");
+            console.error(resp);
+            return;
+        }
+
+        // Preencher a data na tela após atribuir o responsável.
+        if (
+            responsavelAlterado &&
+            podeAtribuirResponsavel
+        ) {
+
+            const responsavel =
+                document.getElementById("servidor_" + id);
+
+            const campoInicio =
+                document.getElementById("data_inicio_" + id);
+
             if (
-                responsavelAlterado &&
-                podeAtribuirResponsavel
+                responsavel &&
+                responsavel.value &&
+                campoInicio &&
+                !campoInicio.value
             ) {
-    
-                const responsavel =
-                    document.getElementById("servidor_" + id);
-    
-                const campoInicio =
-                    document.getElementById("data_inicio_" + id);
-    
-                if (
-                    responsavel &&
-                    responsavel.value &&
-                    campoInicio &&
-                    !campoInicio.value
-                ) {
-    
-                    const agora = new Date();
-    
-                    const ano = agora.getFullYear();
-    
-                    const mes = String(
-                        agora.getMonth() + 1
-                    ).padStart(2, "0");
-    
-                    const dia = String(
-                        agora.getDate()
-                    ).padStart(2, "0");
-    
-                    campoInicio.value =
-                        `${ano}-${mes}-${dia}`;
-                }
+
+                const agora = new Date();
+
+                const ano = agora.getFullYear();
+
+                const mes = String(
+                    agora.getMonth() + 1
+                ).padStart(2, "0");
+
+                const dia = String(
+                    agora.getDate()
+                ).padStart(2, "0");
+
+                campoInicio.value =
+                    `${ano}-${mes}-${dia}`;
             }
-    
-        })
-        .catch(err => {
-            alert("Erro de rede");
-            console.error(err);
-        });
-    }
+        }
+
+    })
+    .catch(err => {
+        alert("Erro de rede");
+        console.error(err);
+    });
+}
 
     function excluir(id){
         if(!confirm("Excluir esta requisição?")) return;
