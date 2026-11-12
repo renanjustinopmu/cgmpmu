@@ -8748,8 +8748,8 @@ def extrair_requisicoes_checklist(valor):
         return set()
 
     # ==================================================
-    # IDENTIFICA A ENTIDADE DA LINHA
-    # A sigla vale para todos os números encontrados
+    # IDENTIFICA ENTIDADE
+    # Aceita DMAE grudado no ano: 2026DMAE
     # ==================================================
 
     entidade = "PMU"
@@ -8757,7 +8757,7 @@ def extrair_requisicoes_checklist(valor):
     for sigla in CHECKLIST_SIGLAS:
 
         if re.search(
-            rf"(?<![A-Z0-9]){sigla}(?![A-Z0-9])",
+            rf"(?<![A-Z]){sigla}(?![A-Z0-9])",
             texto
         ):
             entidade = sigla
@@ -8765,7 +8765,7 @@ def extrair_requisicoes_checklist(valor):
 
     # ==================================================
     # IDENTIFICA O ANO
-    # Aceita: /2026, -2026, _2026 ou espaço + 2026
+    # Aceita /2026, -2026, _2026 e 2026DMAE
     # ==================================================
 
     anos = re.findall(
@@ -8776,7 +8776,7 @@ def extrair_requisicoes_checklist(valor):
     ano = anos[-1] if anos else None
 
     # ==================================================
-    # REMOVE AS SIGLAS DA ANÁLISE NUMÉRICA
+    # REMOVE AS SIGLAS
     # ==================================================
 
     texto_numeros = texto
@@ -8784,7 +8784,7 @@ def extrair_requisicoes_checklist(valor):
     for sigla in CHECKLIST_SIGLAS:
 
         texto_numeros = re.sub(
-            rf"(?<![A-Z0-9]){sigla}(?![A-Z0-9])",
+            rf"(?<![A-Z]){sigla}(?![A-Z0-9])",
             " ",
             texto_numeros
         )
@@ -8802,7 +8802,7 @@ def extrair_requisicoes_checklist(valor):
         )
 
     # ==================================================
-    # EXTRAI TODOS OS NÚMEROS DA REQUISIÇÃO
+    # EXTRAI TODOS OS NÚMEROS
     # ==================================================
 
     numeros = re.findall(
@@ -8811,6 +8811,7 @@ def extrair_requisicoes_checklist(valor):
     )
 
     resultado = set()
+
     for numero in numeros:
         resultado.add((
             numero,
