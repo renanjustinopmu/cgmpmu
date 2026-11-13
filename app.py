@@ -9385,6 +9385,53 @@ def localizar_pdf_requisicao(r, indice_pdfs):
 
     return indice_pdfs.get(chave, [])
 
+# ==========================================================
+# ATUALIZAÇÃO MANUAL CHECKLIST PDF E PLANILHAS
+# ==========================================================
+
+@app.route("/atualizar-cache-checklists")
+def atualizar_cache_checklists():
+
+    if "user" not in session:
+        return redirect("/")
+
+    # Somente administrador pode forçar atualização
+    if session.get("perfil") != "admin":
+        return "Acesso negado", 403
+
+    try:
+
+        # Invalida cache das planilhas
+        CHECKLIST_CACHE["atualizado"] = 0
+
+        # Invalida cache dos PDFs
+        CHECKLIST_PDF_CACHE["atualizado"] = 0
+
+        # Executa imediatamente as duas atualizações
+        checklist_chaves, checklist_fontes = (
+            carregar_checklists_google()
+        )
+
+        indice_pdfs, consulta_pdfs_ok = (
+            carregar_pdfs_checklist_drive()
+        )
+
+        print("====================================")
+        print("ATUALIZAÇÃO MANUAL DOS CHECKLISTS")
+        print("PLANILHAS:", checklist_fontes)
+        print("COMBINAÇÕES:", len(checklist_chaves))
+        print("PDFs encontrados:", len(indice_pdfs))
+        print("DRIVE OK:", consulta_pdfs_ok)
+        print("====================================")
+
+        return redirect("/requisicoes")
+
+    except Exception as e:
+
+        print("ERRO NA ATUALIZAÇÃO MANUAL:", e)
+
+        return f"Erro ao atualizar checklists: {e}", 500
+
 @app.route("/requisicoes", methods=["GET", "POST"])
 def requisicoes():
     if "user" not in session:
