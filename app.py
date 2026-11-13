@@ -8740,6 +8740,7 @@ def normalizar_checklist_texto(valor):
 # ==========================================================
 # INTERPRETA UMA CÉLULA DA COLUNA D
 # ==========================================================
+
 def extrair_requisicoes_checklist(valor):
 
     texto = normalizar_checklist_texto(valor)
@@ -8749,7 +8750,6 @@ def extrair_requisicoes_checklist(valor):
 
     # ==================================================
     # IDENTIFICA ENTIDADE
-    # Aceita DMAE grudado no ano: 2026DMAE
     # ==================================================
 
     entidade = "PMU"
@@ -8762,18 +8762,6 @@ def extrair_requisicoes_checklist(valor):
         ):
             entidade = sigla
             break
-
-    # ==================================================
-    # IDENTIFICA O ANO
-    # Aceita /2026, -2026, _2026 e 2026DMAE
-    # ==================================================
-
-    anos = re.findall(
-        r"(?<!\d)((?:19|20)\d{2})(?!\d)",
-        texto
-    )
-
-    ano = anos[-1] if anos else None
 
     # ==================================================
     # REMOVE AS SIGLAS
@@ -8790,19 +8778,36 @@ def extrair_requisicoes_checklist(valor):
         )
 
     # ==================================================
-    # REMOVE OS ANOS
+    # IDENTIFICA SOMENTE O ÚLTIMO ANO
     # ==================================================
 
-    for ano_encontrado in set(anos):
+    padrao_ano = r"(?<!\d)((?:19|20)\d{2})(?!\d)"
 
-        texto_numeros = re.sub(
-            rf"(?<!\d){re.escape(ano_encontrado)}(?!\d)",
-            " ",
-            texto_numeros
+    ocorrencias = list(
+        re.finditer(padrao_ano, texto_numeros)
+    )
+
+    ano = None
+
+    if ocorrencias:
+
+        # O último número de quatro dígitos é o ano
+        ultima_ocorrencia = ocorrencias[-1]
+
+        ano = ultima_ocorrencia.group(1)
+
+        # Remove somente o ano, preservando os demais números
+        inicio = ultima_ocorrencia.start()
+        fim = ultima_ocorrencia.end()
+
+        texto_numeros = (
+            texto_numeros[:inicio]
+            + " "
+            + texto_numeros[fim:]
         )
 
     # ==================================================
-    # EXTRAI TODOS OS NÚMEROS
+    # EXTRAI TODOS OS NÚMEROS DAS REQUISIÇÕES
     # ==================================================
 
     numeros = re.findall(
@@ -8813,11 +8818,13 @@ def extrair_requisicoes_checklist(valor):
     resultado = set()
 
     for numero in numeros:
+
         resultado.add((
             numero,
             ano,
             entidade
         ))
+
     return resultado
 
 # ==========================================================
